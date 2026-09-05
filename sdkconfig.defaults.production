@@ -1,0 +1,7 @@
+# Production overlay, applied on top of sdkconfig.defaults.
+# Optimise for size and quieten the log output.
+
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y

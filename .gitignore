@@ -1,0 +1,58 @@
+# ---- ESP-IDF build output ----
+build/
+build_*/
+cmake-build-*/
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+# Managed components are restored by `idf.py reconfigure` from idf_component.yml
+managed_components/
+dependencies.lock
+
+# ---- Compiler / tooling artifacts ----
+compile_commands.json
+*.o
+*.a
+*.d
+*.elf
+*.bin
+*.map
+*.su
+*.gcno
+*.gcda
+*.gcov
+coverage/
+
+# ---- Espressif tooling ----
+.espressif/
+*.espressifide
+size_report.txt
+partition_table/
+
+# ---- Python ----
+*.py[cod]
+__pycache__/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ---- Editors / IDEs ----
+.cache/
+.clangd/
+.ccls-cache/
+.idea/
+*.code-workspace
+.vscode/ipch/
+.vscode/*.log
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs & scratch ----
+*.log
+*.swp
+*~

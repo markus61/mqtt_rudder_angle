@@ -1,0 +1,38 @@
+# Silicognition ManT1S board defaults.
+# Derived from the MicroPython SIL_MANT1S board definition (sdkconfig.board
+# plus sdkconfig.spiram_esp32 / .240mhz / .flash_qio_80m).
+
+CONFIG_IDF_TARGET="esp32"
+
+# ESP32-PICO-V3-02: 8 MB flash at 80 MHz.
+# DIO, not QIO: the in-package PSRAM below runs in quad mode and occupies the
+# VSPI host (CONFIG_SPIRAM_OCCUPY_VSPI_HOST), which takes the pins QIO flash
+# would need. Requesting QIO here is silently downgraded to DIO anyway.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# ESP32-PICO-V3-02 has 2 MB of in-package PSRAM
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Ethernet: internal EMAC driving the external LAN8670 T1S PHY over RMII.
+# The PHY driver comes from the espressif/lan867x managed component; ESP-IDF
+# only ships 100BASE-TX PHYs. As of IDF 5.3+ the RMII interface and clock
+# source are configured at runtime via eth_esp32_emac_config_t rather than
+# through Kconfig, so they live in mant1s_ethernet.c, not here.
+CONFIG_ETH_USE_ESP32_EMAC=y
+
+# No SPI-attached Ethernet on this board.
+CONFIG_ETH_USE_SPI_ETHERNET=n
+
+CONFIG_LWIP_LOCAL_HOSTNAME="ManT1S"
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

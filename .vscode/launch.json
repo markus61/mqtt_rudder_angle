@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "espidf",
+      "request": "launch",
+      "name": "ManT1S: JTAG debug",
+      "verifyAppBinBeforeDebug": false,
+      "initGdbCommands": [
+        "target remote :3333",
+        "set remote hardware-watchpoint-limit 2",
+        "mon reset halt",
+        "flushregs",
+        "thb app_main"
+      ]
+    }
+  ]
+}

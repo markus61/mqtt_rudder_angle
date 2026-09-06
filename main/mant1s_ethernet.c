@@ -3,7 +3,7 @@
  *
  * Hardware (mirrors the MicroPython SIL_MANT1S board definition):
  *   MCU        ESP32-PICO-V3-02
- *   PHY        Microchip LAN8670, 10BASE-T1S, SMI address 0
+ *   PHY        Microchip LAN8671, 10BASE-T1S, SMI address 0
  *   MDC        GPIO8    (differs from the ESP32 default of GPIO23)
  *   MDIO       GPIO7    (differs from the ESP32 default of GPIO18)
  *   PHY reset  none, the PHY has no reset line wired to the MCU
@@ -27,7 +27,7 @@ static const char *TAG = "mant1s_eth";
 #define MANT1S_ETH_MDC_GPIO  8
 #define MANT1S_ETH_MDIO_GPIO 7
 
-/* The LAN8670 is strapped to SMI address 0. Pinning it explicitly rather than
+/* The LAN8671 is strapped to SMI address 0. Pinning it explicitly rather than
  * using ESP_ETH_PHY_ADDR_AUTO makes a miswired SMI bus fail loudly instead of
  * silently binding to whatever else answers. */
 #define MANT1S_ETH_PHY_ADDR 0
@@ -80,7 +80,7 @@ esp_err_t mant1s_ethernet_start(esp_eth_handle_t *out_eth_handle)
     esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&esp32_emac_config, &mac_config);
     ESP_RETURN_ON_FALSE(mac != NULL, ESP_FAIL, TAG, "failed to create EMAC instance");
 
-    /* --- PHY: LAN8670 10BASE-T1S --- */
+    /* --- PHY: LAN8671 10BASE-T1S --- */
     eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
     phy_config.phy_addr = MANT1S_ETH_PHY_ADDR;
     phy_config.reset_gpio_num = -1;  /* no MCU-driven reset line on this board */
@@ -116,7 +116,7 @@ esp_err_t mant1s_ethernet_start(esp_eth_handle_t *out_eth_handle)
 
     ESP_RETURN_ON_ERROR(esp_eth_start(eth_handle), TAG, "failed to start Ethernet");
 
-    ESP_LOGI(TAG, "LAN8670 initialised, MDC=GPIO%d MDIO=GPIO%d addr=%d",
+    ESP_LOGI(TAG, "LAN8671 initialised, MDC=GPIO%d MDIO=GPIO%d addr=%d",
              MANT1S_ETH_MDC_GPIO, MANT1S_ETH_MDIO_GPIO, MANT1S_ETH_PHY_ADDR);
 
     if (out_eth_handle != NULL) {

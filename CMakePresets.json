@@ -7,46 +7,22 @@
   },
   "configurePresets": [
     {
-      "name": "base",
-      "hidden": true,
-      "generator": "Ninja",
-      "cacheVariables": {
-        "IDF_TARGET": "esp32"
-      }
-    },
-    {
       "name": "default",
-      "inherits": "base",
       "displayName": "Default (development)",
-      "description": "Development build: info-level logging, debug optimisation",
+      "description": "Development configuration",
       "binaryDir": "${sourceDir}/build/default",
       "cacheVariables": {
-        "SDKCONFIG": "${sourceDir}/build/default/sdkconfig",
-        "SDKCONFIG_DEFAULTS": "${sourceDir}/sdkconfig.defaults"
+        "SDKCONFIG": "${sourceDir}/build/default/sdkconfig"
       }
     },
     {
       "name": "production",
-      "inherits": "base",
       "displayName": "Production",
-      "description": "Production build: size-optimised, warn-level logging",
+      "description": "Production configuration",
       "binaryDir": "${sourceDir}/build/production",
       "cacheVariables": {
-        "SDKCONFIG": "${sourceDir}/build/production/sdkconfig",
-        "SDKCONFIG_DEFAULTS": "${sourceDir}/sdkconfig.defaults;${sourceDir}/sdkconfig.defaults.production"
+        "SDKCONFIG": "${sourceDir}/build/production/sdkconfig"
       }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "default",
-      "configurePreset": "default",
-      "displayName": "Build (development)"
-    },
-    {
-      "name": "production",
-      "configurePreset": "production",
-      "displayName": "Build (production)"
     }
   ]
 }

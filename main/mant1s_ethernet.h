@@ -10,7 +10,7 @@ extern "C" {
 /**
  * @brief Bring up the ManT1S 10BASE-T1S interface and start DHCP.
  *
- * Initialises the ESP32 EMAC in RMII mode, attaches the LAN8670 PHY, glues the
+ * Initialises the ESP32 EMAC in RMII mode, attaches the LAN8671 PHY, glues the
  * driver to an esp_netif with the DHCP client enabled, and starts the link.
  * This function does not block until a lease is acquired; watch for the
  * IP_EVENT_ETH_GOT_IP event (already logged by this module) instead.

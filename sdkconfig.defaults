@@ -23,7 +23,7 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Ethernet: internal EMAC driving the external LAN8670 T1S PHY over RMII.
+# Ethernet: internal EMAC driving the external LAN8671 T1S PHY over RMII.
 # The PHY driver comes from the espressif/lan867x managed component; ESP-IDF
 # only ships 100BASE-TX PHYs. As of IDF 5.3+ the RMII interface and clock
 # source are configured at runtime via eth_esp32_emac_config_t rather than

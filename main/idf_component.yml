@@ -1,7 +1,8 @@
 dependencies:
   idf:
-    version: ">=5.3"
+    version: '>=5.3'
   # Microchip LAN8670/1/2 10BASE-T1S PHY driver. Not part of ESP-IDF itself;
   # ESP-IDF only ships 100BASE-TX PHYs (lan87xx, ksz80xx, ip101, dp83848).
   espressif/lan867x:
-    version: "^2.1.0"
+    version: ^2.1.0
+  espressif/mqtt: '*'

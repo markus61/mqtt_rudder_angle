@@ -6,3 +6,6 @@ dependencies:
   espressif/lan867x:
     version: ^2.1.0
   espressif/mqtt: '*'
+  # cJSON was a built-in ESP-IDF component up to v5.x; from v6.0 it has to be
+  # pulled in from the component registry.
+  espressif/cjson: '*'

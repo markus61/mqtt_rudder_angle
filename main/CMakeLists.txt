@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "mant1s_ethernet.c"
         "init_mqtt.c"
+        "configuration.c"
     INCLUDE_DIRS
         "."
     # With set(COMPONENTS main) in the top-level CMakeLists, main no longer
@@ -11,6 +12,8 @@ idf_component_register(
     REQUIRES
         esp_eth
     PRIV_REQUIRES
+        espressif__cjson
+        esp_app_format
         esp_event
         esp_netif
         nvs_flash

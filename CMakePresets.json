@@ -9,8 +9,8 @@
     {
       "name": "default",
       "displayName": "Default (development)",
-      "description": "Development configuration",
-      "binaryDir": "${sourceDir}/build/default",
+      "description": "Development configuration. binaryDir is relative on purpose; a ${sourceDir} macro is not expanded by idf.py and leaks a literal directory into the build path.",
+      "binaryDir": "build/default",
       "cacheVariables": {
         "SDKCONFIG": "${sourceDir}/build/default/sdkconfig"
       }
@@ -18,8 +18,8 @@
     {
       "name": "production",
       "displayName": "Production",
-      "description": "Production configuration",
-      "binaryDir": "${sourceDir}/build/production",
+      "description": "Production configuration. binaryDir is relative on purpose; see the default preset.",
+      "binaryDir": "build/production",
       "cacheVariables": {
         "SDKCONFIG": "${sourceDir}/build/production/sdkconfig"
       }

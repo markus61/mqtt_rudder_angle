@@ -29,7 +29,8 @@ void app_main(void)
     ESP_LOGI(TAG, "ManT1S 10BASE-T1S bring-up");
 
     /* MQTT is handled in init_mqtt.c: once DHCP delivers a lease, a client
-     * connects to the broker on the gateway and subscribes to "configure". */
+     * connects to the broker on the gateway and publishes a configuration
+     * request to "config_request". */
     ESP_ERROR_CHECK(init_mqtt());
 
     ESP_ERROR_CHECK(mant1s_ethernet_start(NULL));

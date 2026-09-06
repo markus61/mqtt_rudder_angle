@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "configuration.h"
 #include "esp_app_desc.h"
@@ -106,6 +107,26 @@ static void publish_config_request(esp_mqtt_client_handle_t client,
     esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, request_json, 0, 1, 0);
 }
 
+static void publish_configured_state(esp_mqtt_client_handle_t client)
+{
+    char mac_address_string[18];
+    format_own_mac_address(mac_address_string, sizeof(mac_address_string));
+
+    time_t current_time = time(NULL);
+    struct tm utc_time = {0};
+    gmtime_r(&current_time, &utc_time);
+
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+    char state_json[128];
+    snprintf(state_json, sizeof(state_json),
+             "{\"now\":\"%s\",\"mac\":\"%s\",\"state\":\"configured\"}",
+             timestamp, mac_address_string);
+
+    esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, state_json, 0, 1, 0);
+}
+
 static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -166,6 +187,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                  * also stops the next reconnect from resubscribing. */
                 device_is_configured = true;
                 unsubscribe_config_response(event->client);
+                publish_configured_state(event->client);
             }
             break;
         }

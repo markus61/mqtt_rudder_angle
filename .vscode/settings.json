@@ -2,9 +2,6 @@
   "C_Cpp.intelliSenseEngine": "default",
   "idf.extensionActivationMode": "always",
   "idf.espIdfPath": "/home/markus/.espressif/v6.1/esp-idf",
-  "idf.customExtraVars": {
-    "IDF_TARGET": "esp32"
-  },
   "idf.adapterTargetName": "esp32",
   "idf.buildPath": "${workspaceFolder}/build/default",
   "idf.flashType": "UART",
@@ -38,10 +35,6 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=/home/markus/src/espressif/ManT1S-Angle/build/default"
-  ],
-  "idf.openOcdConfigs": [
-    "interface/ftdi/esp32_devkitj_v1.cfg",
-    "target/esp32.cfg"
   ],
   "idf.port": "/dev/ttyUSB0"
 }

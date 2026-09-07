@@ -11,6 +11,11 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "mqtt_client.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "nvs.h"
+#include "sdkconfig.h"
+#include "soc/soc_caps.h"
 
 static const char *TAG = "init_mqtt";
 
@@ -34,6 +39,21 @@ static esp_mqtt_client_handle_t mqtt_client;
  * handler, which runs on a single task, so no locking is needed. */
 static bool device_is_configured;
 
+#define CONFIGURATION_NVS_NAMESPACE "config"
+#define CONFIGURATION_NVS_PAYLOAD_KEY "payload"
+
+#if SOC_WIFI_SUPPORTED
+#define HARDWARE_HAS_WIFI_JSON "true"
+#else
+#define HARDWARE_HAS_WIFI_JSON "false"
+#endif
+
+#if SOC_EMAC_SUPPORTED
+#define HARDWARE_HAS_ETHERNET_JSON "true"
+#else
+#define HARDWARE_HAS_ETHERNET_JSON "false"
+#endif
+
 /* Colon-separated MAC for the JSON payload, e.g. "aa:bb:cc:dd:ee:ff". */
 static void format_own_mac_address(char *buffer, size_t buffer_size)
 {
@@ -45,7 +65,9 @@ static void format_own_mac_address(char *buffer, size_t buffer_size)
              mac_address[3], mac_address[4], mac_address[5]);
 }
 
-/* Builds "config/<own MAC without colons>", e.g. "config/aabbccddeeff". */
+/* Builds "config/<own MAC without colons>", e.g. "config/aabbccddeeff".
+   uses the result to subscribe and unsubscribe from the MQTT broker.
+   a managing application can use this topic to send configuration responses. */
 static void format_config_response_topic(char *buffer, size_t buffer_size)
 {
     char mac_address_string[18];
@@ -99,10 +121,20 @@ static void unsubscribe_config_response(esp_mqtt_client_handle_t client)
 static void publish_config_request(esp_mqtt_client_handle_t client,
                                    const char *mac_address_string)
 {
-    char request_json[128];
+    char request_json[256];
+    const esp_partition_t *running_partition = esp_ota_get_running_partition();
+    const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
+    unsigned long running_partition_size = running_partition != NULL
+                                               ? (unsigned long)running_partition->size
+                                               : 0;
+
     snprintf(request_json, sizeof(request_json),
-             "{\"mac\":\"%s\",\"app_version\":\"%s\"}",
-             mac_address_string, esp_app_get_description()->version);
+             "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
+             "\"hardware\":{\"chip\":\"%s\",\"running_partition_size\":%lu,"
+             "\"has_wifi\":%s,\"has_ethernet\":%s}}",
+             mac_address_string, esp_app_get_description()->version,
+             running_partition_label, CONFIG_IDF_TARGET, running_partition_size,
+             HARDWARE_HAS_WIFI_JSON, HARDWARE_HAS_ETHERNET_JSON);
 
     esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, request_json, 0, 1, 0);
 }
@@ -125,6 +157,33 @@ static void publish_configured_state(esp_mqtt_client_handle_t client)
              timestamp, mac_address_string);
 
     esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, state_json, 0, 1, 0);
+}
+
+static bool persist_configuration_data(const char *payload)
+{
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(CONFIGURATION_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to open configuration NVS namespace: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    err = nvs_set_str(nvs_handle, CONFIGURATION_NVS_PAYLOAD_KEY, payload);
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(nvs_handle);
+    }
+    nvs_close(nvs_handle);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to persist configuration data: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Configuration data persisted to NVS");
+    return true;
 }
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
@@ -181,7 +240,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             memcpy(payload, event->data, (size_t)payload_length);
             payload[payload_length] = '\0';
 
-            if (configure_this_device(payload))
+            if (configure_this_device(payload) && persist_configuration_data(payload))
             {
                 /* Configured, so the topic is no longer of interest. The flag
                  * also stops the next reconnect from resubscribing. */
@@ -202,6 +261,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
         ESP_LOGW(TAG, "MQTT disconnected, client will retry automatically");
         break;
     case MQTT_EVENT_ERROR:
+        /* ToDo: load local configuration from persistent storage if MQTT fails.*/
         ESP_LOGE(TAG, "MQTT error");
         break;
     default:

@@ -11,3 +11,17 @@ endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(COMPONENTS main)
 project(mant1s_angle)
+
+idf_build_get_property(python PYTHON)
+
+add_custom_command(
+    TARGET app
+    POST_BUILD
+    COMMAND
+        ${python}
+        "${CMAKE_SOURCE_DIR}/tools/write_build_info.py"
+        --image "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin"
+        --build-dir "${CMAKE_BINARY_DIR}"
+    COMMENT "Writing application build information JSON"
+    VERBATIM
+)

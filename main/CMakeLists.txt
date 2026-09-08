@@ -18,6 +18,7 @@ idf_component_register(
     esp_event
     esp_netif
     app_update
+    esp_https_ota
     nvs_flash
     soc
 )

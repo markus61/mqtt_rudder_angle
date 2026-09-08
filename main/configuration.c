@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_https_ota.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 
@@ -153,9 +154,34 @@ static void apply_ota_update_request(const char *firmware_url)
     const esp_partition_t *target_partition = esp_ota_get_next_update_partition(NULL);
     if (firmware_url != NULL)
     {
+        if (target_partition == NULL)
+        {
+            ESP_LOGE(TAG, "OTA update requested but no target OTA partition is available");
+            return;
+        }
+
         ESP_LOGI(TAG, "OTA update requested by configuration. Target Partition: %s", target_partition->label);
         ESP_LOGI(TAG, "Firmware URL: %s", firmware_url);
-        /* esp_restart(); */
+
+        esp_http_client_config_t http_config = {
+            .url = firmware_url,
+            .timeout_ms = 30000,
+            .keep_alive_enable = true,
+        };
+        esp_https_ota_config_t ota_config = {
+            .http_config = &http_config,
+            .partition.staging = target_partition,
+        };
+
+        esp_err_t err = esp_https_ota(&ota_config);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "OTA update failed: %s", esp_err_to_name(err));
+            return;
+        }
+
+        ESP_LOGI(TAG, "OTA update completed successfully; restarting");
+        esp_restart();
     }
 }
 

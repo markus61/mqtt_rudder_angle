@@ -253,7 +253,7 @@ bool configure_this_device(const char *payload)
     /* TODO: apply the remaining settings once the schema is defined. */
     const bool clock_was_set = apply_device_clock(configuration);
     const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));
-    if (firmware_url)
+    if (firmware_url && firmware_url[0] != '\0')
     {
         apply_ota_update_request(firmware_url);
     }

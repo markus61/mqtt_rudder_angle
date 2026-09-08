@@ -111,10 +111,14 @@ static void apply_sensor_pin(const cJSON *configuration)
     device_config.sensor_gpio_number = member->valueint;
 }
 
-static void apply_sensor_topic(const cJSON *configuration)
+/* Reads a topic member, leaving the destination untouched when the member is
+ * absent, empty or too long. Both topics validate identically, so they share
+ * one helper rather than a copy each. */
+static void apply_topic_member(const cJSON *configuration, const char *member_name,
+                               char *destination, size_t destination_size)
 {
     const char *topic = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(configuration, "sensor_topic"));
+        cJSON_GetObjectItemCaseSensitive(configuration, member_name));
     if (topic == NULL)
     {
         return;
@@ -122,18 +126,17 @@ static void apply_sensor_topic(const cJSON *configuration)
 
     if (topic[0] == '\0')
     {
-        ESP_LOGE(TAG, "\"sensor_topic\" must not be empty, keeping '%s'",
-                 device_config.sensor_topic);
+        ESP_LOGE(TAG, "\"%s\" must not be empty, keeping '%s'", member_name, destination);
         return;
     }
-    if (strlen(topic) >= sizeof(device_config.sensor_topic))
+    if (strlen(topic) >= destination_size)
     {
-        ESP_LOGE(TAG, "\"sensor_topic\" is longer than %d characters, keeping '%s'",
-                 (int)sizeof(device_config.sensor_topic) - 1, device_config.sensor_topic);
+        ESP_LOGE(TAG, "\"%s\" is longer than %d characters, keeping '%s'",
+                 member_name, (int)destination_size - 1, destination);
         return;
     }
 
-    strlcpy(device_config.sensor_topic, topic, sizeof(device_config.sensor_topic));
+    strlcpy(destination, topic, destination_size);
 }
 
 void device_config_apply_json(const cJSON *configuration)
@@ -154,7 +157,10 @@ void device_config_apply_json(const cJSON *configuration)
                        &device_config.sensor_maximum_degrees);
     apply_float_member(configuration, "publish_deadband_deg",
                        &device_config.publish_deadband_degrees);
-    apply_sensor_topic(configuration);
+    apply_topic_member(configuration, "sensor_topic", device_config.sensor_topic,
+                       sizeof(device_config.sensor_topic));
+    apply_topic_member(configuration, "control_topic", device_config.control_topic,
+                       sizeof(device_config.control_topic));
 
     /* A zero-width voltage span would divide by zero when converting, so fall
      * back to the shipped default rather than trusting the document. */
@@ -174,14 +180,15 @@ void device_config_apply_json(const cJSON *configuration)
     }
 
     ESP_LOGI(TAG, "Sensor settings: pin=%d, %d..%d mV -> %g..%g deg, "
-                  "deadband=%g deg, topic='%s'",
+                  "deadband=%g deg, topic='%s', control topic='%s'",
              device_config.sensor_gpio_number,
              device_config.sensor_minimum_millivolts,
              device_config.sensor_maximum_millivolts,
              device_config.sensor_minimum_degrees,
              device_config.sensor_maximum_degrees,
              device_config.publish_deadband_degrees,
-             device_config.sensor_topic);
+             device_config.sensor_topic,
+             device_config.control_topic);
 }
 
 esp_err_t device_config_load_from_nvs(void)

@@ -37,6 +37,10 @@ typedef struct
     /* How far the angle must move before it is worth another publish. */
     float publish_deadband_degrees;
     char sensor_topic[DEVICE_CONFIG_TOPIC_SIZE];
+    /* Topic the device listens on for commands. Empty until a configuration
+     * document supplies one, because there is no sensible default: a guessed
+     * topic would either collide with another device or be silently wrong. */
+    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
 } device_config_t;
 
 /**

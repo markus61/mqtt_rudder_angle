@@ -121,6 +121,22 @@ static void subscribe_config_response(esp_mqtt_client_handle_t client)
     esp_mqtt_client_subscribe(client, response_topic, 1);
 }
 
+/* The control topic comes from the configuration document rather than being
+ * derived from the MAC, so a device that was never told one simply has no
+ * control channel and there is nothing to subscribe to. */
+static void subscribe_control_topic(esp_mqtt_client_handle_t client)
+{
+    const char *control_topic = device_config_get()->control_topic;
+    if (control_topic[0] == '\0')
+    {
+        ESP_LOGI(TAG, "No control topic configured, not subscribing");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Subscribing to control topic '%s'", control_topic);
+    esp_mqtt_client_subscribe(client, control_topic, 1);
+}
+
 static void unsubscribe_config_response(esp_mqtt_client_handle_t client)
 {
     char response_topic[MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE];
@@ -247,10 +263,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
     {
         mqtt_is_connected = true;
 
+        /* Subscriptions do not survive a reconnect, so the control topic is
+         * taken out again on every connect. This also covers a reboot that
+         * restored its settings from NVS, where no configuration document
+         * arrives to trigger the subscription. */
+        subscribe_control_topic(event->client);
+
         if (device_is_configured)
         {
             /* Already configured; the broker has nothing left to tell us, so
-             * neither resubscribe nor ask again. */
+             * do not ask again. */
             ESP_LOGI(TAG, "MQTT connected, configuration already applied");
             break;
         }
@@ -298,6 +320,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                  * also stops the next reconnect from resubscribing. */
                 device_is_configured = true;
                 unsubscribe_config_response(event->client);
+                subscribe_control_topic(event->client);
                 publish_configured_state(event->client);
 
                 /* The document may have supplied the sensor pin, so start

@@ -8,6 +8,9 @@
 
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
 
 static const char *TAG = "configuration";
 
@@ -145,6 +148,17 @@ static bool apply_device_clock(const cJSON *configuration)
     return true;
 }
 
+static void apply_ota_update_request(const char *firmware_url)
+{
+    const esp_partition_t *target_partition = esp_ota_get_next_update_partition(NULL);
+    if (firmware_url != NULL)
+    {
+        ESP_LOGI(TAG, "OTA update requested by configuration. Target Partition: %s", target_partition->label);
+        ESP_LOGI(TAG, "Firmware URL: %s", firmware_url);
+        /* esp_restart(); */
+    }
+}
+
 /* Logs one JSON member, so the parsed result is visible without knowing the
  * schema yet. */
 static void log_configuration_item(const cJSON *item)
@@ -212,6 +226,11 @@ bool configure_this_device(const char *payload)
 
     /* TODO: apply the remaining settings once the schema is defined. */
     const bool clock_was_set = apply_device_clock(configuration);
+    const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));
+    if (firmware_url)
+    {
+        apply_ota_update_request(firmware_url);
+    }
 
     cJSON_Delete(configuration);
     return clock_was_set;

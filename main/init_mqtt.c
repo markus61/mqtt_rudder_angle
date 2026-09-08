@@ -23,8 +23,9 @@ static const char *TAG = "init_mqtt";
 /* Topic the broker answers on. MQTT topic levels are separated by '/', so the
  * MAC is used without its colons to keep the topic a single level. */
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX "config/"
-/* Prefix plus 12 MAC digits plus terminator. */
-#define MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE (sizeof(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX) + 12)
+/* Prefix plus 12 MAC digits plus terminator. Wrap the expression so it is
+ * always treated as a single compile-time size expression. */
+#define MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE ((sizeof(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX) + 12U))
 
 /* Known inbound topics. C switch() needs an integer, so incoming topic strings
  * are mapped onto this enum first. */
@@ -73,11 +74,16 @@ static void format_config_response_topic(char *buffer, size_t buffer_size)
     char mac_address_string[18];
     format_own_mac_address(mac_address_string, sizeof(mac_address_string));
 
-    size_t topic_length = snprintf(buffer, buffer_size,
-                                   MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX);
+    size_t topic_length = strlen(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX);
+    if (topic_length + 1 > buffer_size)
+    {
+        topic_length = buffer_size > 0 ? buffer_size - 1U : 0U;
+    }
+
+    memcpy(buffer, MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX, topic_length);
     for (const char *character = mac_address_string; *character != '\0'; character++)
     {
-        if (*character != ':' && topic_length + 1 < buffer_size)
+        if (*character != ':' && topic_length + 1U < buffer_size)
         {
             buffer[topic_length++] = *character;
         }
@@ -156,7 +162,10 @@ static void publish_configured_state(esp_mqtt_client_handle_t client)
              "{\"now\":\"%s\",\"mac\":\"%s\",\"state\":\"configured\"}",
              timestamp, mac_address_string);
 
-    esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, state_json, 0, 1, 0);
+    char config_topic[MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE];
+    format_config_response_topic(config_topic, sizeof(config_topic));
+
+    esp_mqtt_client_publish(client, config_topic, state_json, 0, 1, 0);
 }
 
 static bool persist_configuration_data(const char *payload)

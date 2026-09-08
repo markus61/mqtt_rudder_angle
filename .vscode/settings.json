@@ -1,9 +1,11 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.extensionActivationMode": "always",
-  "idf.espIdfPath": "/home/markus/.espressif/v6.1/esp-idf",
-  "idf.adapterTargetName": "esp32",
   "idf.buildPath": "${workspaceFolder}/build/default",
+
+  // Keep sdkconfig outside idf.buildPath so "Full Clean Project" (which deletes
+  // the whole build directory) cannot take the project configuration with it.
+  "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig",
   "idf.flashType": "UART",
   "cmake.configureOnOpen": false,
   "cmake.configureOnEdit": false,
@@ -30,11 +32,5 @@
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
-  "clangd.path": "/home/markus/.espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd",
-  "clangd.arguments": [
-    "--background-index",
-    "--query-driver=**",
-    "--compile-commands-dir=/home/markus/src/espressif/ManT1S-Angle/build/default"
-  ],
   "idf.port": "/dev/ttyUSB0"
 }

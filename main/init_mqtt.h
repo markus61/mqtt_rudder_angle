@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -21,6 +23,22 @@ extern "C" {
  * @return ESP_OK on success, otherwise the error from event registration.
  */
 esp_err_t init_mqtt(void);
+
+/**
+ * @brief Publish one sensor reading as a JSON document.
+ *
+ * The payload carries the current time, the device MAC and the angle, so a
+ * subscriber can tell readings from different devices apart. Sent at QoS 0
+ * without retain and without blocking, which suits a continuous stream of
+ * telemetry where the next reading is only milliseconds away.
+ *
+ * @param topic Topic to publish on.
+ * @param angle_degrees Reading in degrees.
+ * @return true when the reading was handed to the MQTT client, false while the
+ *         client is not connected or its outbox is full. A false return means
+ *         the caller should keep the reading as unpublished.
+ */
+bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees);
 
 #ifdef __cplusplus
 }

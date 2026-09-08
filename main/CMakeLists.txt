@@ -4,16 +4,20 @@ idf_component_register(
     "mant1s_ethernet.c"
     "init_mqtt.c"
     "configuration.c"
+    "device_config.c"
+    "angle_sensor.c"
     INCLUDE_DIRS
     "."
 
     # With set(COMPONENTS main) in the top-level CMakeLists, main no longer
     # gets an implicit dependency on every component, so list them explicitly.
-    # esp_eth is public because mant1s_ethernet.h includes esp_eth_driver.h.
+    # esp_eth is public because mant1s_ethernet.h includes esp_eth_driver.h,
+    # and cjson because device_config.h includes cJSON.h.
     REQUIRES
     esp_eth
-    PRIV_REQUIRES
     espressif__cjson
+    PRIV_REQUIRES
+    esp_adc
     esp_app_format
     esp_event
     esp_netif

@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "cJSON.h"
+#include "device_config.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_https_ota.h"
@@ -250,7 +251,10 @@ bool configure_this_device(const char *payload)
     }
     ESP_LOGI(TAG, "Configuration parsed successfully, %d setting(s) received", item_count);
 
-    /* TODO: apply the remaining settings once the schema is defined. */
+    /* Hand the document to the settings store, which keeps the members it
+     * recognises so the rest of the firmware can read them back. */
+    device_config_apply_json(configuration);
+
     const bool clock_was_set = apply_device_clock(configuration);
     const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));
     if (firmware_url && firmware_url[0] != '\0')

@@ -4,7 +4,9 @@
 #include <string.h>
 #include <time.h>
 
+#include "angle_sensor.h"
 #include "configuration.h"
+#include "device_config.h"
 #include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -39,9 +41,13 @@ static esp_mqtt_client_handle_t mqtt_client;
 /* Set once a configuration has been applied. Only touched from the MQTT event
  * handler, which runs on a single task, so no locking is needed. */
 static bool device_is_configured;
+/* Whether the client is currently usable for publishing. Written from the MQTT
+ * event handler and read by the sensor task; a plain bool is enough, because a
+ * reading lost to a stale value is simply retried on the next sample. */
+static volatile bool mqtt_is_connected;
 
-#define CONFIGURATION_NVS_NAMESPACE "config"
-#define CONFIGURATION_NVS_PAYLOAD_KEY "payload"
+/* CONFIGURATION_NVS_NAMESPACE and CONFIGURATION_NVS_PAYLOAD_KEY come from
+ * device_config.h, which also reads the document back on the next boot. */
 
 #if SOC_WIFI_SUPPORTED
 #define HARDWARE_HAS_WIFI_JSON "true"
@@ -168,6 +174,41 @@ static void publish_configured_state(esp_mqtt_client_handle_t client)
     esp_mqtt_client_publish(client, config_topic, state_json, 0, 1, 0);
 }
 
+bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
+{
+    if (mqtt_client == NULL || !mqtt_is_connected)
+    {
+        return false;
+    }
+
+    char mac_address_string[18];
+    format_own_mac_address(mac_address_string, sizeof(mac_address_string));
+
+    time_t current_time = time(NULL);
+    struct tm utc_time = {0};
+    gmtime_r(&current_time, &utc_time);
+
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+    char reading_json[128];
+    snprintf(reading_json, sizeof(reading_json),
+             "{\"now\":\"%s\",\"mac\":\"%s\",\"angle\":%.2f}",
+             timestamp, mac_address_string, angle_degrees);
+
+    /* Enqueue rather than publish: this runs on the fixed-rate sensor task, so
+     * it must not block waiting for the broker to acknowledge. */
+    const int message_id = esp_mqtt_client_enqueue(mqtt_client, topic, reading_json,
+                                                   0, 0, 0, true);
+    if (message_id < 0)
+    {
+        ESP_LOGW(TAG, "Failed to enqueue a reading for '%s'", topic);
+        return false;
+    }
+
+    return true;
+}
+
 static bool persist_configuration_data(const char *payload)
 {
     nvs_handle_t nvs_handle;
@@ -204,6 +245,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
     {
     case MQTT_EVENT_CONNECTED:
     {
+        mqtt_is_connected = true;
+
         if (device_is_configured)
         {
             /* Already configured; the broker has nothing left to tell us, so
@@ -256,6 +299,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                 device_is_configured = true;
                 unsubscribe_config_response(event->client);
                 publish_configured_state(event->client);
+
+                /* The document may have supplied the sensor pin, so start
+                 * sampling now instead of waiting for the next boot. Doing
+                 * nothing when already running is handled inside. */
+                angle_sensor_start();
             }
             break;
         }
@@ -267,6 +315,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
         break;
     }
     case MQTT_EVENT_DISCONNECTED:
+        mqtt_is_connected = false;
         ESP_LOGW(TAG, "MQTT disconnected, client will retry automatically");
         break;
     case MQTT_EVENT_ERROR:

@@ -1,3 +1,5 @@
+#include "angle_sensor.h"
+#include "device_config.h"
 #include "mant1s_ethernet.h"
 #include "init_mqtt.h"
 
@@ -57,6 +59,11 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ManT1S 10BASE-T1S bring-up");
 
+    /* Restore the settings from the last configuration document, so the device
+     * can sense and publish even when the broker is unreachable. A device that
+     * has never been configured simply has nothing stored yet. */
+    device_config_load_from_nvs();
+
     /* MQTT is handled in init_mqtt.c: once DHCP delivers a lease, a client
      * connects to the broker on the gateway and publishes a configuration
      * request to "config_request". */
@@ -66,6 +73,13 @@ void app_main(void)
 
     confirm_ota_image_after_startup();
 
+    /* Start sampling the angle sensor. This is the device's steady-state job:
+     * read the sensor at 10 Hz, convert to degrees and publish whenever the
+     * angle changes. Without a stored sensor pin it declines to start, and
+     * init_mqtt.c starts it as soon as a configuration document supplies one. */
+    angle_sensor_start();
+
     /* Link and DHCP progress is reported by the event handlers in
-     * mant1s_ethernet.c, so there is nothing to poll here. */
+     * mant1s_ethernet.c, and the angle sensor runs on its own task, so there
+     * is nothing to poll here. */
 }

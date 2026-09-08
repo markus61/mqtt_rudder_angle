@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "angle_sensor.h"
+#include "cJSON.h"
 #include "configuration.h"
 #include "device_config.h"
 #include "esp_app_desc.h"
@@ -35,6 +36,7 @@ typedef enum
 {
     MQTT_TOPIC_UNKNOWN,
     MQTT_TOPIC_CONFIGURE_RESPONSE,
+    MQTT_TOPIC_CONTROL,
 } mqtt_inbound_topic_t;
 
 static esp_mqtt_client_handle_t mqtt_client;
@@ -109,7 +111,46 @@ static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
         return MQTT_TOPIC_CONFIGURE_RESPONSE;
     }
 
+    const char *control_topic = device_config_get()->control_topic;
+    if (control_topic[0] != '\0' &&
+        (size_t)topic_length == strlen(control_topic) &&
+        strncmp(topic, control_topic, (size_t)topic_length) == 0)
+    {
+        return MQTT_TOPIC_CONTROL;
+    }
+
     return MQTT_TOPIC_UNKNOWN;
+}
+
+/* Control messages are JSON objects with a string "name" member. */
+static void handle_control_action(const char *payload, int payload_length)
+{
+    cJSON *action = cJSON_ParseWithLength(payload, (size_t)payload_length);
+    if (!cJSON_IsObject(action))
+    {
+        ESP_LOGW(TAG, "Control action must be a JSON object");
+        cJSON_Delete(action);
+        return;
+    }
+
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(action, "name");
+    if (!cJSON_IsString(name) || name->valuestring == NULL)
+    {
+        ESP_LOGW(TAG, "Control action is missing a string \"name\" member");
+        cJSON_Delete(action);
+        return;
+    }
+
+    if (strcmp(name->valuestring, "calibrate") == 0)
+    {
+        angle_sensor_calibrate();
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Unknown control action '%s'", name->valuestring);
+    }
+
+    cJSON_Delete(action);
 }
 
 static void subscribe_config_response(esp_mqtt_client_handle_t client)
@@ -330,6 +371,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             }
             break;
         }
+        case MQTT_TOPIC_CONTROL:
+            handle_control_action(event->data, event->data_len);
+            break;
         case MQTT_TOPIC_UNKNOWN:
         default:
             ESP_LOGW(TAG, "No handler for topic %.*s", event->topic_len, event->topic);

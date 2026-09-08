@@ -25,6 +25,14 @@ extern "C" {
  */
 esp_err_t angle_sensor_start(void);
 
+/**
+ * @brief Handle a request to calibrate the angle sensor.
+ *
+ * Calibration is not implemented yet; receiving the action is logged so the
+ * control path is observable until the calibration procedure is added.
+ */
+void angle_sensor_calibrate(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -228,3 +228,8 @@ release_adc_unit:
     adc_unit_handle = NULL;
     return err;
 }
+
+void angle_sensor_calibrate(void)
+{
+    ESP_LOGI(TAG, "Angle sensor calibration requested");
+}

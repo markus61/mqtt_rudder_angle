@@ -5,7 +5,9 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_ota_ops.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "main";
 
@@ -18,6 +20,33 @@ static void initialise_nvs(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
+}
+
+static void confirm_ota_image_after_startup(void)
+{
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    const esp_partition_t *running_partition = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+
+    esp_err_t err = esp_ota_get_state_partition(running_partition, &ota_state);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed to read OTA image state: %s", esp_err_to_name(err));
+        return;
+    }
+
+    if (ota_state != ESP_OTA_IMG_PENDING_VERIFY)
+    {
+        return;
+    }
+
+    ESP_LOGI(TAG, "OTA image is pending verification; marking startup as valid");
+    err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to mark OTA image valid: %s", esp_err_to_name(err));
+    }
+#endif
 }
 
 void app_main(void)
@@ -34,6 +63,8 @@ void app_main(void)
     ESP_ERROR_CHECK(init_mqtt());
 
     ESP_ERROR_CHECK(mant1s_ethernet_start(NULL));
+
+    confirm_ota_image_after_startup();
 
     /* Link and DHCP progress is reported by the event handlers in
      * mant1s_ethernet.c, so there is nothing to poll here. */

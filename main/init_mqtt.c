@@ -122,35 +122,120 @@ static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
     return MQTT_TOPIC_UNKNOWN;
 }
 
+typedef enum
+{
+    CMD_UNKNOWN = -1,
+    CMD_CALIBRATE,
+    CMD_BRAINDUMP
+} control_action;
+
+control_action parse_action(const char *action_string)
+{
+    if (strcasecmp(action_string, "calibrate") == 0)
+        return CMD_CALIBRATE;
+    if (strcasecmp(action_string, "braindump") == 0)
+        return CMD_BRAINDUMP;
+    return CMD_UNKNOWN;
+}
+
+static void device_control_braindump()
+{
+    if (mqtt_client == NULL || !mqtt_is_connected)
+    {
+        ESP_LOGW(TAG, "Cannot publish braindump while MQTT is disconnected");
+        return;
+    }
+
+    const device_config_t *config = device_config_get();
+    const char *device_name = strrchr(config->control_topic, '/');
+    device_name = device_name != NULL ? device_name + 1 : config->control_topic;
+    if (device_name[0] == '\0')
+    {
+        ESP_LOGW(TAG, "Cannot publish braindump without a device name");
+        return;
+    }
+
+    char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_TOPIC_SIZE];
+    const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
+                                      "control_reply/%s", device_name);
+    if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic))
+    {
+        ESP_LOGE(TAG, "Braindump reply topic is too long");
+        return;
+    }
+
+    char mac_address_string[18];
+    format_own_mac_address(mac_address_string, sizeof(mac_address_string));
+
+    const esp_partition_t *running_partition = esp_ota_get_running_partition();
+    const char *running_partition_label = running_partition != NULL ?
+                                              running_partition->label : "";
+    const unsigned long running_partition_size = running_partition != NULL ?
+                                                    (unsigned long)running_partition->size : 0;
+
+    char state_json[512];
+    const int state_length = snprintf(
+        state_json, sizeof(state_json),
+        "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
+        "\"running_partition_size\":%lu,\"mqtt_connected\":true,\"configured\":%s,"
+        "\"sensor_gpio\":%d,\"sensor_min_mv\":%d,\"sensor_max_mv\":%d,"
+        "\"sensor_min_deg\":%.2f,\"sensor_max_deg\":%.2f,"
+        "\"publish_deadband_deg\":%.2f,\"sensor_topic\":\"%s\","
+        "\"control_topic\":\"%s\"}",
+        mac_address_string, esp_app_get_description()->version, running_partition_label,
+        running_partition_size, device_is_configured ? "true" : "false",
+        config->sensor_gpio_number, config->sensor_minimum_millivolts,
+        config->sensor_maximum_millivolts, config->sensor_minimum_degrees,
+        config->sensor_maximum_degrees, config->publish_deadband_degrees,
+        config->sensor_topic, config->control_topic);
+    if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
+    {
+        ESP_LOGE(TAG, "Braindump state is too large");
+        return;
+    }
+
+    if (esp_mqtt_client_publish(mqtt_client, reply_topic, state_json, state_length, 1, 0) < 0)
+    {
+        ESP_LOGW(TAG, "Failed to publish braindump to '%s'", reply_topic);
+    }
+}
+
 /* Control messages are JSON objects with a string "name" member. */
 static void handle_control_action(const char *payload, int payload_length)
 {
-    cJSON *action = cJSON_ParseWithLength(payload, (size_t)payload_length);
-    if (!cJSON_IsObject(action))
+    cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+    if (!cJSON_IsObject(action_json))
     {
         ESP_LOGW(TAG, "Control action must be a JSON object");
-        cJSON_Delete(action);
+        cJSON_Delete(action_json);
         return;
     }
 
-    const cJSON *name = cJSON_GetObjectItemCaseSensitive(action, "name");
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(action_json, "name");
     if (!cJSON_IsString(name) || name->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Control action is missing a string \"name\" member");
-        cJSON_Delete(action);
+        cJSON_Delete(action_json);
         return;
     }
 
-    if (strcmp(name->valuestring, "calibrate") == 0)
+    control_action action = parse_action(name->valuestring);
+    switch (action)
     {
+    case CMD_CALIBRATE:
+        ESP_LOGI(TAG, "Handling control action 'calibrate'");
         angle_sensor_calibrate();
-    }
-    else
-    {
+        break;
+    case CMD_BRAINDUMP:
+        ESP_LOGI(TAG, "Handling control action 'braindump'");
+        device_control_braindump();
+        break;
+    default:
         ESP_LOGW(TAG, "Unknown control action '%s'", name->valuestring);
+        break;
     }
 
-    cJSON_Delete(action);
+    cJSON_Delete(action_json);
 }
 
 static void subscribe_config_response(esp_mqtt_client_handle_t client)

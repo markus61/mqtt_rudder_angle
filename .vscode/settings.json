@@ -2,9 +2,6 @@
   "C_Cpp.intelliSenseEngine": "default",
   "idf.extensionActivationMode": "always",
   "idf.buildPath": "${workspaceFolder}/build/default",
-
-  // Keep sdkconfig outside idf.buildPath so "Full Clean Project" (which deletes
-  // the whole build directory) cannot take the project configuration with it.
   "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig",
   "idf.flashType": "UART",
   "cmake.configureOnOpen": false,

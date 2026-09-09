@@ -16,6 +16,7 @@
 #include "mqtt_client.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
@@ -126,7 +127,8 @@ typedef enum
 {
     CMD_UNKNOWN = -1,
     CMD_CALIBRATE,
-    CMD_BRAINDUMP
+    CMD_BRAINDUMP,
+    CMD_RESET
 } control_action;
 
 control_action parse_action(const char *action_string)
@@ -135,6 +137,8 @@ control_action parse_action(const char *action_string)
         return CMD_CALIBRATE;
     if (strcasecmp(action_string, "braindump") == 0)
         return CMD_BRAINDUMP;
+    if (strcasecmp(action_string, "reset") == 0)
+        return CMD_RESET;
     return CMD_UNKNOWN;
 }
 
@@ -230,6 +234,11 @@ static void handle_control_action(const char *payload, int payload_length)
         ESP_LOGI(TAG, "Handling control action 'braindump'");
         device_control_braindump();
         break;
+    case CMD_RESET:
+        ESP_LOGI(TAG, "Handling control action 'reset'");
+        cJSON_Delete(action_json);
+        esp_restart();
+        return;
     default:
         ESP_LOGW(TAG, "Unknown control action '%s'", name->valuestring);
         break;

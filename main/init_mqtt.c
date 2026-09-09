@@ -5,9 +5,11 @@
 #include <time.h>
 
 #include "angle_sensor.h"
+#include "angle_sensor_config.h"
 #include "cJSON.h"
 #include "configuration.h"
 #include "device_config.h"
+#include "features_config.h"
 #include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -17,7 +19,6 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
-#include "nvs.h"
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
 
@@ -48,9 +49,6 @@ static bool device_is_configured;
  * event handler and read by the sensor task; a plain bool is enough, because a
  * reading lost to a stale value is simply retried on the next sample. */
 static volatile bool mqtt_is_connected;
-
-/* CONFIGURATION_NVS_NAMESPACE and CONFIGURATION_NVS_PAYLOAD_KEY come from
- * device_config.h, which also reads the document back on the next boot. */
 
 #if SOC_WIFI_SUPPORTED
 #define HARDWARE_HAS_WIFI_JSON "true"
@@ -127,6 +125,7 @@ typedef enum
 {
     CMD_UNKNOWN = -1,
     CMD_BRAINDUMP,
+    CMD_CONFIGURE_SENSOR,
     CMD_RESET
 } control_action;
 
@@ -134,9 +133,44 @@ control_action parse_action(const char *action_string)
 {
     if (strcasecmp(action_string, "braindump") == 0)
         return CMD_BRAINDUMP;
+    if (strcasecmp(action_string, "configure_sensor") == 0)
+        return CMD_CONFIGURE_SENSOR;
     if (strcasecmp(action_string, "reset") == 0)
         return CMD_RESET;
     return CMD_UNKNOWN;
+}
+
+/* A configure_sensor action is self-contained: it identifies the sensor
+ * type and provides each setting required to bring that sensor online. */
+static bool validate_sensor_configuration_action(const cJSON *action_json)
+{
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
+    if (type == NULL || strcmp(type, ANGLE_SENSOR_CONFIG_TYPE) != 0)
+    {
+        ESP_LOGW(TAG, "configure_sensor requires type '%s'", ANGLE_SENSOR_CONFIG_TYPE);
+        return false;
+    }
+
+    const cJSON *sensor_pin = cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin");
+    const cJSON *sample_period =
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_sample_period_ms");
+    const cJSON *samples_per_reading =
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_samples_per_reading");
+    const char *topic = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_topic"));
+
+    if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
+        sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
+        samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
+        strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE)
+    {
+        ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
+                      "sensor_sample_period_ms and sensor_samples_per_reading");
+        return false;
+    }
+
+    return true;
 }
 
 static void device_control_braindump()
@@ -147,9 +181,10 @@ static void device_control_braindump()
         return;
     }
 
-    const device_config_t *config = device_config_get();
-    const char *device_name = strrchr(config->control_topic, '/');
-    device_name = device_name != NULL ? device_name + 1 : config->control_topic;
+    const device_config_t *device_config = device_config_get();
+    const angle_sensor_config_t *sensor_config = angle_sensor_config_get();
+    const char *device_name = strrchr(device_config->control_topic, '/');
+    device_name = device_name != NULL ? device_name + 1 : device_config->control_topic;
     if (device_name[0] == '\0')
     {
         ESP_LOGW(TAG, "Cannot publish braindump without a device name");
@@ -178,17 +213,14 @@ static void device_control_braindump()
         state_json, sizeof(state_json),
         "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
         "\"running_partition_size\":%lu,\"mqtt_connected\":true,\"configured\":%s,"
-        "\"sensor_gpio\":%d,\"sensor_min_mv\":%d,\"sensor_max_mv\":%d,"
-        "\"sensor_min_deg\":%.2f,\"sensor_max_deg\":%.2f,"
-        "\"publish_deadband_deg\":%.2f,\"sensor_samples_per_reading\":%d,\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\","
+        "\"sensor_gpio\":%d,\"sensor_samples_per_reading\":%d,"
+        "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\","
         "\"control_topic\":\"%s\"}",
         mac_address_string, esp_app_get_description()->version, running_partition_label,
         running_partition_size, device_is_configured ? "true" : "false",
-        config->sensor_gpio_number, config->sensor_minimum_millivolts,
-        config->sensor_maximum_millivolts, config->sensor_minimum_degrees,
-        config->sensor_maximum_degrees, config->sensor_deadband_degrees,
-        config->sensor_samples_per_reading, config->sensor_sample_period_ms,
-        config->sensor_topic, config->control_topic);
+        sensor_config->sensor_gpio_number, sensor_config->sensor_samples_per_reading,
+        sensor_config->sensor_sample_period_ms, sensor_config->sensor_topic,
+        device_config->control_topic);
     if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
     {
         ESP_LOGE(TAG, "Braindump state is too large");
@@ -227,6 +259,34 @@ static void handle_control_action(const char *payload, int payload_length)
         ESP_LOGI(TAG, "Handling control action 'braindump'");
         device_control_braindump();
         break;
+    case CMD_CONFIGURE_SENSOR:
+    {
+        ESP_LOGI(TAG, "Handling control action 'configure_sensor'");
+        if (!validate_sensor_configuration_action(action_json))
+        {
+            break;
+        }
+
+        const cJSON *sensor_pin =
+            cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin");
+        angle_sensor_config_apply_json(action_json);
+        if (angle_sensor_config_get()->sensor_gpio_number != sensor_pin->valueint)
+        {
+            ESP_LOGW(TAG, "Could not configure angle sensor: sensor_pin %d is unusable",
+                     sensor_pin->valueint);
+            break;
+        }
+        const esp_err_t err = angle_sensor_start();
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not configure angle sensor: %s", esp_err_to_name(err));
+        }
+        else if (features_config_store_to_nvs() != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not persist angle sensor configuration");
+        }
+        break;
+    }
     case CMD_RESET:
         ESP_LOGI(TAG, "Handling control action 'reset'");
         cJSON_Delete(action_json);
@@ -353,33 +413,6 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
     return true;
 }
 
-static bool persist_configuration_data(const char *payload)
-{
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(CONFIGURATION_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to open configuration NVS namespace: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = nvs_set_str(nvs_handle, CONFIGURATION_NVS_PAYLOAD_KEY, payload);
-    if (err == ESP_OK)
-    {
-        err = nvs_commit(nvs_handle);
-    }
-    nvs_close(nvs_handle);
-
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to persist configuration data: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    ESP_LOGI(TAG, "Configuration data persisted to NVS");
-    return true;
-}
-
 static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -442,7 +475,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             memcpy(payload, event->data, (size_t)payload_length);
             payload[payload_length] = '\0';
 
-            if (configure_this_device(payload) && persist_configuration_data(payload))
+            if (configure_this_device(payload) &&
+                device_config_store_to_nvs() == ESP_OK &&
+                features_config_store_to_nvs() == ESP_OK)
             {
                 /* Configured, so the topic is no longer of interest. The flag
                  * also stops the next reconnect from resubscribing. */
@@ -454,7 +489,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
                 /* The document may have supplied the sensor pin, so start
                  * sampling now instead of waiting for the next boot. Doing
                  * nothing when already running is handled inside. */
-                angle_sensor_start();
+
+                /* new config scheme will have to configure the feature still. */
+                // angle_sensor_start();
             }
             break;
         }

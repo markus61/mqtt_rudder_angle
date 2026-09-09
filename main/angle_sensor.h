@@ -9,11 +9,11 @@ extern "C" {
 /**
  * @brief Start sampling the angle sensor at 10 Hz.
  *
- * Reads the pin and the conversion span from the device configuration, so a
- * configuration document must have supplied a sensor pin first. Each reading is
- * converted to degrees and remembered; a reading that differs from the last
- * published one by at least the configured deadband is published to the
- * configured topic.
+ * Reads the pin, sampling settings and output topic from the angle-sensor
+ * configuration, so a configuration document must have supplied a sensor pin
+ * first. Each reading is converted to degrees and remembered; a reading that
+ * differs from the last published one by the fixed deadband is published to
+ * the configured topic.
  *
  * Safe to call more than once: later calls report that sampling is already
  * running and change nothing, so both the boot path and the arrival of a

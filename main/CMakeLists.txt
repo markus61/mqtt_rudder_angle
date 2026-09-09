@@ -5,6 +5,8 @@ idf_component_register(
     "init_mqtt.c"
     "configuration.c"
     "device_config.c"
+    "features_config.c"
+    "angle_sensor_config.c"
     "angle_sensor.c"
     INCLUDE_DIRS
     "."

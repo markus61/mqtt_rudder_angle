@@ -10,11 +10,10 @@ extern "C"
 {
 #endif
 
-/* NVS location of the raw configuration document. The whole broker payload is
- * stored verbatim under one key, so a reboot without a broker can replay it
- * through the same parser that handled it the first time. */
+/* Configuration records share one namespace. Keep keys short: NVS keys are
+ * limited to 15 characters. */
 #define CONFIGURATION_NVS_NAMESPACE "config"
-#define CONFIGURATION_NVS_PAYLOAD_KEY "payload"
+#define CONFIGURATION_NVS_DEVICE_KEY "device_config"
 
 /* Longest MQTT topic accepted from the configuration document. */
 #define DEVICE_CONFIG_TOPIC_SIZE 64
@@ -22,24 +21,10 @@ extern "C"
     /**
      * @brief The device settings that outlive a configuration document.
      *
-     * Plain data, so a struct rather than an object with behaviour. Every member
-     * has a usable default, which means the device is functional as soon as a
-     * sensor pin is known.
+     * Plain data, so a struct rather than an object with behaviour.
      */
     typedef struct
     {
-        /* GPIO the angle sensor is wired to, or -1 while still unknown. */
-        int sensor_gpio_number;
-        /* Voltage span the sensor produces, mapped onto the degree span below. */
-        int sensor_minimum_millivolts;
-        int sensor_maximum_millivolts;
-        int sensor_samples_per_reading;
-        int sensor_sample_period_ms;
-        float sensor_minimum_degrees;
-        float sensor_maximum_degrees;
-        /* How far the angle must move before it is worth another publish. */
-        float sensor_deadband_degrees;
-        char sensor_topic[DEVICE_CONFIG_TOPIC_SIZE];
         /* Topic the device listens on for commands. Empty until a configuration
          * document supplies one, because there is no sensible default: a guessed
          * topic would either collide with another device or be silently wrong. */
@@ -57,8 +42,7 @@ extern "C"
     /**
      * @brief Overlay a parsed configuration document onto the current settings.
      *
-     * Only members actually present in the document are touched, so a document
-     * carrying just a clock update leaves the sensor settings alone. Values that
+     * Only members actually present in the document are touched. Values that
      * fail validation are logged and skipped, keeping the previous setting.
      *
      * @param configuration Parsed JSON object; ignored when NULL.
@@ -66,13 +50,16 @@ extern "C"
     void device_config_apply_json(const cJSON *configuration);
 
     /**
-     * @brief Restore the settings from the configuration document kept in NVS.
+     * @brief Restore the device settings record from NVS.
      *
      * @return ESP_OK when a stored document was found and applied,
      *         ESP_ERR_NVS_NOT_FOUND on a device that has never been configured,
      *         or another error from the NVS layer.
      */
     esp_err_t device_config_load_from_nvs(void);
+
+    /** Store the device settings record in NVS. */
+    esp_err_t device_config_store_to_nvs(void);
 
 #ifdef __cplusplus
 }

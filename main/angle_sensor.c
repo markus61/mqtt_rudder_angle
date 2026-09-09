@@ -3,7 +3,7 @@
 #include <limits.h>
 #include <math.h>
 
-#include "device_config.h"
+#include "angle_sensor_config.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
@@ -31,6 +31,14 @@ static int max_millivolts = INT_MIN;
 static volatile int centered_reference_millivolts = INT_MIN;
 
 static TaskHandle_t angle_sensor_task_handle;
+
+/* Conversion and publish policy are sensor behaviour, not configuration.
+ * The configuration document only supplies wiring, output and sampling. */
+#define SENSOR_MINIMUM_MILLIVOLTS 0
+#define SENSOR_MAXIMUM_MILLIVOLTS 3100
+#define SENSOR_MINIMUM_DEGREES -45.0f
+#define SENSOR_MAXIMUM_DEGREES 45.0f
+#define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
 
 /* Averages a burst of raw readings and converts the result to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
@@ -62,35 +70,32 @@ static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
     return true;
 }
 
-/* Maps a sensor voltage onto the configured degree span, clamped to its ends so
+/* Maps a sensor voltage onto the fixed degree span, clamped to its ends so
  * a sensor that reads slightly outside its nominal range cannot report an
  * impossible deflection. */
-static float convert_millivolts_to_degrees(int millivolts, const device_config_t *config)
+static float convert_millivolts_to_degrees(int millivolts)
 {
     const int centered_reference = centered_reference_millivolts;
     if (centered_reference != INT_MIN)
     {
-        const int configured_center = config->sensor_minimum_millivolts +
-                                      (config->sensor_maximum_millivolts -
-                                       config->sensor_minimum_millivolts) /
-                                          2;
+        const int configured_center = SENSOR_MINIMUM_MILLIVOLTS +
+                                      (SENSOR_MAXIMUM_MILLIVOLTS -
+                                       SENSOR_MINIMUM_MILLIVOLTS) / 2;
         millivolts += configured_center - centered_reference;
     }
 
-    const float voltage_span = (float)(config->sensor_maximum_millivolts -
-                                       config->sensor_minimum_millivolts);
-    const float degree_span = config->sensor_maximum_degrees - config->sensor_minimum_degrees;
+    const float voltage_span = (float)(SENSOR_MAXIMUM_MILLIVOLTS -
+                                       SENSOR_MINIMUM_MILLIVOLTS);
+    const float degree_span = SENSOR_MAXIMUM_DEGREES - SENSOR_MINIMUM_DEGREES;
 
-    const float position_in_span = (float)(millivolts - config->sensor_minimum_millivolts) /
+    const float position_in_span = (float)(millivolts - SENSOR_MINIMUM_MILLIVOLTS) /
                                    voltage_span;
-    const float degrees = config->sensor_minimum_degrees + position_in_span * degree_span;
+    const float degrees = SENSOR_MINIMUM_DEGREES + position_in_span * degree_span;
 
     /* The span may be configured in either direction, so clamp against the
      * lower and higher of the two ends rather than assuming min < max. */
-    const float lower_limit = fminf(config->sensor_minimum_degrees,
-                                    config->sensor_maximum_degrees);
-    const float upper_limit = fmaxf(config->sensor_minimum_degrees,
-                                    config->sensor_maximum_degrees);
+    const float lower_limit = fminf(SENSOR_MINIMUM_DEGREES, SENSOR_MAXIMUM_DEGREES);
+    const float upper_limit = fmaxf(SENSOR_MINIMUM_DEGREES, SENSOR_MAXIMUM_DEGREES);
     return fminf(fmaxf(degrees, lower_limit), upper_limit);
 }
 
@@ -100,9 +105,9 @@ static void angle_sensor_task(void *task_argument)
 
     while (true)
     {
-        /* Re-read the configuration every iteration so a conversion span or
-         * topic that arrives later takes effect without a restart. */
-        const device_config_t *config = device_config_get();
+        /* Re-read the configuration every iteration so a topic that arrives
+         * later takes effect without a restart. */
+        const angle_sensor_config_t *config = angle_sensor_config_get();
 
         int millivolts = 0;
         if (read_sensor_millivolts(&millivolts, config->sensor_samples_per_reading))
@@ -116,14 +121,14 @@ static void angle_sensor_task(void *task_argument)
                 max_millivolts = millivolts;
             }
 
-            last_angle_degrees = convert_millivolts_to_degrees(millivolts, config);
+            last_angle_degrees = convert_millivolts_to_degrees(millivolts);
 
             /* isnan covers the very first reading, where there is nothing to
              * compare against yet. */
             const bool angle_changed =
                 isnan(last_published_angle_degrees) ||
                 fabsf(last_angle_degrees - last_published_angle_degrees) >=
-                    config->sensor_deadband_degrees;
+                    SENSOR_PUBLISH_DEADBAND_DEGREES;
 
             if (angle_changed &&
                 mqtt_publish_sensor_reading(config->sensor_topic, last_angle_degrees))
@@ -177,7 +182,7 @@ esp_err_t angle_sensor_start(void)
         return ESP_OK;
     }
 
-    const device_config_t *config = device_config_get();
+    const angle_sensor_config_t *config = angle_sensor_config_get();
     if (config->sensor_gpio_number < 0)
     {
         ESP_LOGI(TAG, "No sensor pin configured yet, not sampling");

@@ -1,4 +1,5 @@
 #include "angle_sensor.h"
+#include "features_config.h"
 #include "device_config.h"
 #include "mant1s_ethernet.h"
 #include "init_mqtt.h"
@@ -59,10 +60,10 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ManT1S 10BASE-T1S bring-up");
 
-    /* Restore the settings from the last configuration document, so the device
-     * can sense and publish even when the broker is unreachable. A device that
-     * has never been configured simply has nothing stored yet. */
+    /* Restore separate device and feature records. A device that has never
+     * been configured simply has nothing stored yet. */
     device_config_load_from_nvs();
+    features_config_load_from_nvs();
 
     /* MQTT is handled in init_mqtt.c: once DHCP delivers a lease, a client
      * connects to the broker on the gateway and publishes a configuration

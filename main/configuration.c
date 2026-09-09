@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "cJSON.h"
+#include "angle_sensor_config.h"
 #include "device_config.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -254,6 +255,7 @@ bool configure_this_device(const char *payload)
     /* Hand the document to the settings store, which keeps the members it
      * recognises so the rest of the firmware can read them back. */
     device_config_apply_json(configuration);
+    angle_sensor_config_apply_json(configuration);
 
     const bool clock_was_set = apply_device_clock(configuration);
     const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));

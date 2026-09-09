@@ -13,13 +13,6 @@
 
 static const char *TAG = "angle_sensor";
 
-/* 10 Hz. The FreeRTOS tick is 10 ms, so this is an exact number of ticks and
- * the delay also keeps the task watchdog satisfied. */
-#define SAMPLE_PERIOD_MS 100
-/* ADC1 on the ESP32 is noisy enough that a single reading jitters by more than
- * the publish deadband, so each sample is the mean of a short burst. */
-#define SAMPLES_PER_READING 8
-
 /* All of the following are touched only from angle_sensor_task, which is a
  * single task, so no locking is needed. */
 static adc_oneshot_unit_handle_t adc_unit_handle;
@@ -34,11 +27,11 @@ static float last_published_angle_degrees = NAN;
 static TaskHandle_t angle_sensor_task_handle;
 
 /* Averages a burst of raw readings and converts the result to millivolts. */
-static bool read_sensor_millivolts(int *out_millivolts)
+static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
 {
     int raw_total = 0;
 
-    for (int sample_index = 0; sample_index < SAMPLES_PER_READING; sample_index++)
+    for (int sample_index = 0; sample_index < samples_per_reading; sample_index++)
     {
         int raw_reading = 0;
         esp_err_t err = adc_oneshot_read(adc_unit_handle, sensor_adc_channel, &raw_reading);
@@ -50,7 +43,7 @@ static bool read_sensor_millivolts(int *out_millivolts)
         raw_total += raw_reading;
     }
 
-    const int averaged_raw_reading = raw_total / SAMPLES_PER_READING;
+    const int averaged_raw_reading = raw_total / samples_per_reading;
 
     esp_err_t err = adc_cali_raw_to_voltage(adc_calibration_handle, averaged_raw_reading,
                                             out_millivolts);
@@ -96,7 +89,7 @@ static void angle_sensor_task(void *task_argument)
         const device_config_t *config = device_config_get();
 
         int millivolts = 0;
-        if (read_sensor_millivolts(&millivolts))
+        if (read_sensor_millivolts(&millivolts, config->sensor_samples_per_reading))
         {
             last_angle_degrees = convert_millivolts_to_degrees(millivolts, config);
 
@@ -105,7 +98,7 @@ static void angle_sensor_task(void *task_argument)
             const bool angle_changed =
                 isnan(last_published_angle_degrees) ||
                 fabsf(last_angle_degrees - last_published_angle_degrees) >=
-                    config->publish_deadband_degrees;
+                    config->sensor_deadband_degrees;
 
             if (angle_changed &&
                 mqtt_publish_sensor_reading(config->sensor_topic, last_angle_degrees))
@@ -119,7 +112,7 @@ static void angle_sensor_task(void *task_argument)
 
         /* Delay against the last wake-up rather than "now", so the conversion
          * and publish time does not accumulate into a slower sample rate. */
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(SAMPLE_PERIOD_MS));
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(config->sensor_sample_period_ms));
     }
 }
 
@@ -217,7 +210,8 @@ esp_err_t angle_sensor_start(void)
     }
 
     ESP_LOGI(TAG, "Sampling GPIO %d at %d Hz, publishing to '%s'",
-             config->sensor_gpio_number, 1000 / SAMPLE_PERIOD_MS, config->sensor_topic);
+             config->sensor_gpio_number, 1000 / config->sensor_sample_period_ms,
+             config->sensor_topic);
     return ESP_OK;
 
 release_adc_calibration:

@@ -168,25 +168,25 @@ static void device_control_braindump()
     format_own_mac_address(mac_address_string, sizeof(mac_address_string));
 
     const esp_partition_t *running_partition = esp_ota_get_running_partition();
-    const char *running_partition_label = running_partition != NULL ?
-                                              running_partition->label : "";
-    const unsigned long running_partition_size = running_partition != NULL ?
-                                                    (unsigned long)running_partition->size : 0;
+    const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
+    const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
-    char state_json[512];
+    /** Dump the device's internal state as a JSON object */
+    char state_json[1024];
     const int state_length = snprintf(
         state_json, sizeof(state_json),
         "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
         "\"running_partition_size\":%lu,\"mqtt_connected\":true,\"configured\":%s,"
         "\"sensor_gpio\":%d,\"sensor_min_mv\":%d,\"sensor_max_mv\":%d,"
         "\"sensor_min_deg\":%.2f,\"sensor_max_deg\":%.2f,"
-        "\"publish_deadband_deg\":%.2f,\"sensor_topic\":\"%s\","
+        "\"publish_deadband_deg\":%.2f,\"sensor_samples_per_reading\":%d,\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\","
         "\"control_topic\":\"%s\"}",
         mac_address_string, esp_app_get_description()->version, running_partition_label,
         running_partition_size, device_is_configured ? "true" : "false",
         config->sensor_gpio_number, config->sensor_minimum_millivolts,
         config->sensor_maximum_millivolts, config->sensor_minimum_degrees,
-        config->sensor_maximum_degrees, config->publish_deadband_degrees,
+        config->sensor_maximum_degrees, config->sensor_deadband_degrees,
+        config->sensor_samples_per_reading, config->sensor_sample_period_ms,
         config->sensor_topic, config->control_topic);
     if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
     {

@@ -19,7 +19,9 @@ static device_config_t device_config = {
     .sensor_maximum_millivolts = 3100,
     .sensor_minimum_degrees = -45.0f,
     .sensor_maximum_degrees = 45.0f,
-    .publish_deadband_degrees = 0.5f,
+    .sensor_deadband_degrees = 0.5f,
+    .sensor_sample_period_ms = 100,
+    .sensor_samples_per_reading = 8,
     .sensor_topic = "sensors/rudders/starboard",
 };
 
@@ -151,12 +153,16 @@ void device_config_apply_json(const cJSON *configuration)
                          &device_config.sensor_minimum_millivolts);
     apply_integer_member(configuration, "sensor_max_mv",
                          &device_config.sensor_maximum_millivolts);
+    apply_integer_member(configuration, "sensor_samples_per_reading",
+                         &device_config.sensor_samples_per_reading);
+    apply_integer_member(configuration, "sensor_sample_period_ms",
+                         &device_config.sensor_sample_period_ms);
     apply_float_member(configuration, "sensor_min_deg",
                        &device_config.sensor_minimum_degrees);
     apply_float_member(configuration, "sensor_max_deg",
                        &device_config.sensor_maximum_degrees);
     apply_float_member(configuration, "publish_deadband_deg",
-                       &device_config.publish_deadband_degrees);
+                       &device_config.sensor_deadband_degrees);
     apply_topic_member(configuration, "sensor_topic", device_config.sensor_topic,
                        sizeof(device_config.sensor_topic));
     apply_topic_member(configuration, "control_topic", device_config.control_topic,
@@ -171,22 +177,34 @@ void device_config_apply_json(const cJSON *configuration)
         device_config.sensor_minimum_millivolts = 0;
         device_config.sensor_maximum_millivolts = 3100;
     }
+    if (device_config.sensor_samples_per_reading <= 0)
+    {
+        ESP_LOGE(TAG, "\"sensor_samples_per_reading\" must be positive; restoring 8");
+        device_config.sensor_samples_per_reading = 8;
+    }
+    if (device_config.sensor_sample_period_ms <= 0)
+    {
+        ESP_LOGE(TAG, "\"sensor_sample_period_ms\" must be positive; restoring 100");
+        device_config.sensor_sample_period_ms = 100;
+    }
 
     /* A negative deadband would publish on every sample. */
-    if (device_config.publish_deadband_degrees < 0.0f)
+    if (device_config.sensor_deadband_degrees < 0.0f)
     {
         ESP_LOGE(TAG, "\"publish_deadband_deg\" must not be negative; restoring 0.5");
-        device_config.publish_deadband_degrees = 0.5f;
+        device_config.sensor_deadband_degrees = 0.5f;
     }
 
     ESP_LOGI(TAG, "Sensor settings: pin=%d, %d..%d mV -> %g..%g deg, "
-                  "deadband=%g deg, topic='%s', control topic='%s'",
+                  "deadband=%g deg, samples per reading=%d, sample period=%d ms, topic='%s', control topic='%s'",
              device_config.sensor_gpio_number,
              device_config.sensor_minimum_millivolts,
              device_config.sensor_maximum_millivolts,
              device_config.sensor_minimum_degrees,
              device_config.sensor_maximum_degrees,
-             device_config.publish_deadband_degrees,
+             device_config.sensor_deadband_degrees,
+             device_config.sensor_samples_per_reading,
+             device_config.sensor_sample_period_ms,
              device_config.sensor_topic,
              device_config.control_topic);
 }

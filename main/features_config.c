@@ -107,5 +107,10 @@ esp_err_t features_config_store_to_nvs(void)
     {
         ESP_LOGE(TAG, "Failed to store feature configuration: %s", esp_err_to_name(err));
     }
+    else
+    {
+        ESP_LOGI(TAG, "Stored %u feature configuration record(s) to NVS",
+                 ATTACHED_FEATURE_COUNT);
+    }
     return err;
 }

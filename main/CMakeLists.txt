@@ -6,8 +6,8 @@ idf_component_register(
     "configuration.c"
     "device_config.c"
     "features_config.c"
-    "angle_sensor_config.c"
-    "angle_sensor.c"
+    "elobau_angle_sensor_config.c"
+    "elobau_angle_sensor.c"
     INCLUDE_DIRS
     "."
 

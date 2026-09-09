@@ -7,7 +7,7 @@
 #include <time.h>
 
 #include "cJSON.h"
-#include "angle_sensor_config.h"
+#include "elobau_angle_sensor_config.h"
 #include "device_config.h"
 #include "esp_log.h"
 #include "esp_system.h"

@@ -1,12 +1,13 @@
-#include "angle_sensor_config.h"
+#include "elobau_angle_sensor_config.h"
 
+#include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 
-static const char *TAG = "angle_sensor_config";
+static const char *TAG = "elobau_angle_sensor_config";
 
 static angle_sensor_config_t angle_sensor_config = {
     .sensor_gpio_number = -1,
@@ -119,4 +120,16 @@ void angle_sensor_config_apply_json(const cJSON *configuration)
              angle_sensor_config.sensor_sample_period_ms,
              angle_sensor_config.sensor_samples_per_reading,
              angle_sensor_config.sensor_topic);
+}
+
+size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size)
+{
+    const int length = snprintf(
+        buffer, buffer_size,
+        "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
+        "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
+        ANGLE_SENSOR_CONFIG_TYPE, angle_sensor_config.sensor_gpio_number,
+        angle_sensor_config.sensor_samples_per_reading,
+        angle_sensor_config.sensor_sample_period_ms, angle_sensor_config.sensor_topic);
+    return length < 0 || (size_t)length >= buffer_size ? 0U : (size_t)length;
 }

@@ -1,4 +1,4 @@
-#include "angle_sensor.h"
+#include "elobau_angle_sensor.h"
 #include "features_config.h"
 #include "device_config.h"
 #include "mant1s_ethernet.h"

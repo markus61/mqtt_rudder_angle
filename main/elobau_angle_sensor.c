@@ -1,9 +1,9 @@
-#include "angle_sensor.h"
+#include "elobau_angle_sensor.h"
 
 #include <limits.h>
 #include <math.h>
 
-#include "angle_sensor_config.h"
+#include "elobau_angle_sensor_config.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
@@ -80,7 +80,8 @@ static float convert_millivolts_to_degrees(int millivolts)
     {
         const int configured_center = SENSOR_MINIMUM_MILLIVOLTS +
                                       (SENSOR_MAXIMUM_MILLIVOLTS -
-                                       SENSOR_MINIMUM_MILLIVOLTS) / 2;
+                                       SENSOR_MINIMUM_MILLIVOLTS) /
+                                          2;
         millivolts += configured_center - centered_reference;
     }
 

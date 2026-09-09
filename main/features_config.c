@@ -1,13 +1,87 @@
 #include "features_config.h"
 
 #include <stdint.h>
+#include <string.h>
 
-#include "angle_sensor_config.h"
+#include "elobau_angle_sensor.h"
+#include "elobau_angle_sensor_config.h"
 #include "device_config.h"
 #include "esp_log.h"
 #include "nvs.h"
 
 static const char *TAG = "features_config";
+
+/* A configure_sensor action is self-contained: it identifies the sensor
+ * type and provides each setting required to bring that sensor online. */
+bool features_config_validate_sensor_configuration_action(const cJSON *action_json)
+{
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
+    if (type == NULL || strcmp(type, ANGLE_SENSOR_CONFIG_TYPE) != 0)
+    {
+        ESP_LOGW(TAG, "configure_sensor requires type '%s'", ANGLE_SENSOR_CONFIG_TYPE);
+        return false;
+    }
+
+    const cJSON *sensor_pin = cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin");
+    const cJSON *sample_period =
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_sample_period_ms");
+    const cJSON *samples_per_reading =
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_samples_per_reading");
+    const char *topic = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_topic"));
+
+    if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
+        sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
+        samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
+        strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE)
+    {
+        ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
+                      "sensor_sample_period_ms and sensor_samples_per_reading");
+        return false;
+    }
+
+    return true;
+}
+
+esp_err_t features_config_configure_sensor(const cJSON *action_json)
+{
+    if (!features_config_validate_sensor_configuration_action(action_json))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const int sensor_pin =
+        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin")->valueint;
+    angle_sensor_config_apply_json(action_json);
+    if (angle_sensor_config_get()->sensor_gpio_number != sensor_pin)
+    {
+        ESP_LOGW(TAG, "Could not configure angle sensor: sensor_pin %d is unusable", sensor_pin);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return angle_sensor_start();
+}
+
+size_t features_config_format_json(char *buffer, size_t buffer_size)
+{
+    if (buffer_size < 3U)
+    {
+        return 0U;
+    }
+
+    buffer[0] = '[';
+    const size_t feature_length =
+        angle_sensor_config_format_feature_json(buffer + 1, buffer_size - 2U);
+    if (feature_length == 0U)
+    {
+        return 0U;
+    }
+
+    buffer[feature_length + 1U] = ']';
+    buffer[feature_length + 2U] = '\0';
+    return feature_length + 2U;
+}
 
 /* Tags make an incompatible feature order visible rather than applying a
  * record to the wrong driver. Add a union member and an array entry for each

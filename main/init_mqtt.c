@@ -126,15 +126,12 @@ static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
 typedef enum
 {
     CMD_UNKNOWN = -1,
-    CMD_CALIBRATE,
     CMD_BRAINDUMP,
     CMD_RESET
 } control_action;
 
 control_action parse_action(const char *action_string)
 {
-    if (strcasecmp(action_string, "calibrate") == 0)
-        return CMD_CALIBRATE;
     if (strcasecmp(action_string, "braindump") == 0)
         return CMD_BRAINDUMP;
     if (strcasecmp(action_string, "reset") == 0)
@@ -226,10 +223,6 @@ static void handle_control_action(const char *payload, int payload_length)
     control_action action = parse_action(name->valuestring);
     switch (action)
     {
-    case CMD_CALIBRATE:
-        ESP_LOGI(TAG, "Handling control action 'calibrate'");
-        angle_sensor_calibrate();
-        break;
     case CMD_BRAINDUMP:
         ESP_LOGI(TAG, "Handling control action 'braindump'");
         device_control_braindump();
@@ -344,13 +337,13 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
 
     char reading_json[128];
     snprintf(reading_json, sizeof(reading_json),
-             "{\"now\":\"%s\",\"mac\":\"%s\",\"angle\":%.2f}",
-             timestamp, mac_address_string, angle_degrees);
+             "{\"now\":\"%s\",\"angle\":%.2f}",
+             timestamp, angle_degrees);
 
     /* Enqueue rather than publish: this runs on the fixed-rate sensor task, so
      * it must not block waiting for the broker to acknowledge. */
     const int message_id = esp_mqtt_client_enqueue(mqtt_client, topic, reading_json,
-                                                   0, 0, 0, true);
+                                                   0, 0, true, true);
     if (message_id < 0)
     {
         ESP_LOGW(TAG, "Failed to enqueue a reading for '%s'", topic);

@@ -77,7 +77,8 @@ void app_main(void)
      * read the sensor at 10 Hz, convert to degrees and publish whenever the
      * angle changes. Without a stored sensor pin it declines to start, and
      * init_mqtt.c starts it as soon as a configuration document supplies one. */
-    angle_sensor_start();
+    /* rely on the task started after mqtt configuration
+    angle_sensor_start(); */
 
     /* Link and DHCP progress is reported by the event handlers in
      * mant1s_ethernet.c, and the angle sensor runs on its own task, so there

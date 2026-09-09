@@ -1,5 +1,6 @@
 #include "angle_sensor.h"
 
+#include <limits.h>
 #include <math.h>
 
 #include "device_config.h"
@@ -13,8 +14,6 @@
 
 static const char *TAG = "angle_sensor";
 
-/* All of the following are touched only from angle_sensor_task, which is a
- * single task, so no locking is needed. */
 static adc_oneshot_unit_handle_t adc_unit_handle;
 static adc_cali_handle_t adc_calibration_handle;
 static adc_channel_t sensor_adc_channel;
@@ -23,6 +22,13 @@ static float last_angle_degrees;
 /* Angle at the last publish. NAN until the first one, which makes the first
  * reading always exceed the deadband and therefore always publish. */
 static float last_published_angle_degrees = NAN;
+
+/* Observed voltage limits persist for the application's lifetime.  Sentinel
+ * values ensure the first successful reading establishes both limits. */
+static int min_millivolts = INT_MAX;
+static int max_millivolts = INT_MIN;
+/* INT_MIN means the configured voltage midpoint is still in use. */
+static volatile int centered_reference_millivolts = INT_MIN;
 
 static TaskHandle_t angle_sensor_task_handle;
 
@@ -61,6 +67,16 @@ static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
  * impossible deflection. */
 static float convert_millivolts_to_degrees(int millivolts, const device_config_t *config)
 {
+    const int centered_reference = centered_reference_millivolts;
+    if (centered_reference != INT_MIN)
+    {
+        const int configured_center = config->sensor_minimum_millivolts +
+                                      (config->sensor_maximum_millivolts -
+                                       config->sensor_minimum_millivolts) /
+                                          2;
+        millivolts += configured_center - centered_reference;
+    }
+
     const float voltage_span = (float)(config->sensor_maximum_millivolts -
                                        config->sensor_minimum_millivolts);
     const float degree_span = config->sensor_maximum_degrees - config->sensor_minimum_degrees;
@@ -91,6 +107,15 @@ static void angle_sensor_task(void *task_argument)
         int millivolts = 0;
         if (read_sensor_millivolts(&millivolts, config->sensor_samples_per_reading))
         {
+            if (millivolts < min_millivolts)
+            {
+                min_millivolts = millivolts;
+            }
+            if (millivolts > max_millivolts)
+            {
+                max_millivolts = millivolts;
+            }
+
             last_angle_degrees = convert_millivolts_to_degrees(millivolts, config);
 
             /* isnan covers the very first reading, where there is nothing to
@@ -201,6 +226,7 @@ esp_err_t angle_sensor_start(void)
         goto release_adc_unit;
     }
 
+    ESP_LOGI(TAG, "Starting the angle sensor task");
     if (xTaskCreate(angle_sensor_task, "angle_sensor", 4096, NULL, 5,
                     &angle_sensor_task_handle) != pdPASS)
     {
@@ -212,6 +238,9 @@ esp_err_t angle_sensor_start(void)
     ESP_LOGI(TAG, "Sampling GPIO %d at %d Hz, publishing to '%s'",
              config->sensor_gpio_number, 1000 / config->sensor_sample_period_ms,
              config->sensor_topic);
+
+    mqtt_publish_sensor_reading(config->sensor_topic, last_angle_degrees);
+
     return ESP_OK;
 
 release_adc_calibration:
@@ -221,9 +250,4 @@ release_adc_unit:
     adc_oneshot_del_unit(adc_unit_handle);
     adc_unit_handle = NULL;
     return err;
-}
-
-void angle_sensor_calibrate(void)
-{
-    ESP_LOGI(TAG, "Angle sensor calibration requested");
 }

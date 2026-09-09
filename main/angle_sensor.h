@@ -28,8 +28,7 @@ esp_err_t angle_sensor_start(void);
 /**
  * @brief Handle a request to calibrate the angle sensor.
  *
- * Calibration is not implemented yet; receiving the action is logged so the
- * control path is observable until the calibration procedure is added.
+ * The current sensor voltage is captured as the centered reference.
  */
 void angle_sensor_calibrate(void);
 

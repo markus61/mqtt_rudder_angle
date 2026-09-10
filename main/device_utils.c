@@ -1,21 +1,16 @@
-#include "configuration.h"
+#include "device_utils.h"
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
-#include "cJSON.h"
-#include "elobau_angle_sensor_config.h"
-#include "device_config.h"
-#include "esp_log.h"
-#include "esp_system.h"
 #include "esp_https_ota.h"
+#include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 
-static const char *TAG = "configuration";
+static const char *TAG = "device_utils";
 
 /* Parses an RFC3339 timestamp such as "2026-09-06T12:34:56.789+02:00" into
  * seconds and microseconds since the epoch. Returns false on anything that
@@ -121,7 +116,7 @@ static bool parse_rfc3339(const char *timestamp, struct timeval *utc_time)
 }
 
 /* Reads the "now" member and applies it to the system clock. */
-static bool apply_device_clock(const cJSON *configuration)
+bool device_utils_clock_set(const cJSON *configuration)
 {
     const cJSON *now = cJSON_GetObjectItemCaseSensitive(configuration, "now");
     if (!cJSON_IsString(now) || now->valuestring == NULL)
@@ -151,7 +146,7 @@ static bool apply_device_clock(const cJSON *configuration)
     return true;
 }
 
-static void apply_ota_update_request(const char *firmware_url)
+void device_utils_apply_ota_update_request(const char *firmware_url)
 {
     const esp_partition_t *target_partition = esp_ota_get_next_update_partition(NULL);
     if (firmware_url != NULL)
@@ -189,7 +184,7 @@ static void apply_ota_update_request(const char *firmware_url)
 
 /* Logs one JSON member, so the parsed result is visible without knowing the
  * schema yet. */
-static void log_configuration_item(const cJSON *item)
+void device_utils_log_configuration_item(const cJSON *item)
 {
     if (cJSON_IsString(item))
     {
@@ -214,56 +209,4 @@ static void log_configuration_item(const cJSON *item)
         ESP_LOGI(TAG, "  %s = %s", item->string, nested_json ? nested_json : "<unprintable>");
         cJSON_free(nested_json);
     }
-}
-
-bool configure_this_device(const char *payload)
-{
-    cJSON *configuration = cJSON_Parse(payload);
-    if (configuration == NULL)
-    {
-        /* cJSON reports the position it choked on, which is more useful than
-         * just saying the document was bad. */
-        const char *error_position = cJSON_GetErrorPtr();
-        if (error_position != NULL)
-        {
-            ESP_LOGE(TAG, "Configuration is not valid JSON, failed at offset %d: %s",
-                     (int)(error_position - payload), error_position);
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Configuration is not valid JSON");
-        }
-        return false;
-    }
-
-    if (!cJSON_IsObject(configuration))
-    {
-        ESP_LOGE(TAG, "Configuration must be a JSON object");
-        cJSON_Delete(configuration);
-        return false;
-    }
-
-    int item_count = 0;
-    const cJSON *item = NULL;
-    cJSON_ArrayForEach(item, configuration)
-    {
-        log_configuration_item(item);
-        item_count++;
-    }
-    ESP_LOGI(TAG, "Configuration parsed successfully, %d setting(s) received", item_count);
-
-    /* Hand the document to the settings store, which keeps the members it
-     * recognises so the rest of the firmware can read them back. */
-    device_config_apply_json(configuration);
-    angle_sensor_config_apply_json(configuration);
-
-    const bool clock_was_set = apply_device_clock(configuration);
-    const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));
-    if (firmware_url && firmware_url[0] != '\0')
-    {
-        apply_ota_update_request(firmware_url);
-    }
-
-    cJSON_Delete(configuration);
-    return clock_was_set;
 }

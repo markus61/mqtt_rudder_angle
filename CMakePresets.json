@@ -12,7 +12,7 @@
       "description": "Development configuration. binaryDir is relative on purpose; a ${sourceDir} macro is not expanded by idf.py and leaks a literal directory into the build path.",
       "binaryDir": "build/default",
       "cacheVariables": {
-        "SDKCONFIG": "${sourceDir}/build/default/sdkconfig"
+        "SDKCONFIG": "${sourceDir}/sdkconfig.${presetName}"
       }
     },
     {
@@ -21,7 +21,7 @@
       "description": "Production configuration. binaryDir is relative on purpose; see the default preset.",
       "binaryDir": "build/production",
       "cacheVariables": {
-        "SDKCONFIG": "${sourceDir}/build/production/sdkconfig"
+        "SDKCONFIG": "${sourceDir}/sdkconfig.${presetName}"
       }
     }
   ]

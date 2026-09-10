@@ -5,7 +5,6 @@
 #include <time.h>
 
 #include "cJSON.h"
-#include "configuration.h"
 #include "device_config.h"
 #include "features_config.h"
 #include "esp_app_desc.h"
@@ -167,6 +166,13 @@ static void device_control_braindump()
     char mac_address_string[18];
     format_own_mac_address(mac_address_string, sizeof(mac_address_string));
 
+    time_t current_time = time(NULL);
+    struct tm utc_time = {0};
+    gmtime_r(&current_time, &utc_time);
+
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
     const esp_partition_t *running_partition = esp_ota_get_running_partition();
     const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
@@ -181,10 +187,10 @@ static void device_control_braindump()
     char state_json[1024];
     const int state_length = snprintf(
         state_json, sizeof(state_json),
-        "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
+        "{\"now\":\"%s\",\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
         "\"running_partition_size\":%lu,\"mqtt_connected\":true,\"configured\":%s,"
         "\"device\":{\"control_topic\":\"%s\"},\"features\":%s}",
-        mac_address_string, esp_app_get_description()->version, running_partition_label,
+        timestamp, mac_address_string, esp_app_get_description()->version, running_partition_label,
         running_partition_size, device_is_configured ? "true" : "false",
         device_config->control_topic, features_json);
     if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
@@ -427,7 +433,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             memcpy(payload, event->data, (size_t)payload_length);
             payload[payload_length] = '\0';
 
-            if (configure_this_device(payload) &&
+            if (device_configure_from_mqtt(payload) &&
                 device_config_store_to_nvs() == ESP_OK &&
                 features_config_store_to_nvs() == ESP_OK)
             {

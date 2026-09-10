@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Run ESP-IDF commands with this project's selected CMake preset.
+#
+# Examples:
+#   tools/idf build
+#   tools/idf --preset production build
+#   IDF_PRESET=production tools/idf flash monitor
+
+set -euo pipefail
+
+project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+idf_export=${ESP_IDF_EXPORT:-"$HOME/.espressif/v6.1/esp-idf/export.sh"}
+# Match the ESP-IDF VS Code extension's v6.1 virtual environment.  An explicit
+# ESP_IDF_PYTHON_ENV permits a different local installation when necessary.
+idf_python_env=${ESP_IDF_PYTHON_ENV:-"$HOME/.espressif/tools/python/v6.1/venv"}
+preset=${IDF_PRESET:-default}
+
+usage() {
+    printf 'Usage: %s [--preset NAME] <idf.py arguments...>\n' "${0##*/}" >&2
+    printf 'Uses build/NAME and sdkconfig.NAME (default preset: %s).\n' "$preset" >&2
+}
+
+case ${1:-} in
+    --preset)
+        [[ $# -ge 3 ]] || { usage; exit 2; }
+        preset=$2
+        shift 2
+        ;;
+    --preset=*)
+        preset=${1#--preset=}
+        shift
+        ;;
+esac
+
+[[ $preset =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    printf 'Invalid preset name: %s\n' "$preset" >&2
+    exit 2
+}
+[[ $# -gt 0 ]] || { usage; exit 2; }
+[[ -f $idf_export ]] || {
+    printf 'ESP-IDF v6.1 export script was not found: %s\n' "$idf_export" >&2
+    printf 'Set ESP_IDF_EXPORT to the desired ESP-IDF export.sh path.\n' >&2
+    exit 1
+}
+[[ -x $idf_python_env/bin/python ]] || {
+    printf 'ESP-IDF Python environment was not found: %s\n' "$idf_python_env" >&2
+    printf 'Set ESP_IDF_PYTHON_ENV to the desired ESP-IDF virtual-environment path.\n' >&2
+    exit 1
+}
+
+# shellcheck disable=SC1090
+export IDF_PYTHON_ENV_PATH=$idf_python_env
+. "$idf_export" >/dev/null
+
+cd "$project_dir"
+
+# Keep command-line SDKCONFIG overrides authoritative.  Otherwise select the
+# same sdkconfig.<presetName> convention used by CMakePresets.json and VS Code.
+sdkconfig=${SDKCONFIG:-"$project_dir/sdkconfig.$preset"}
+sdkconfig_defaults="$project_dir/sdkconfig.defaults"
+if [[ $preset != default && -f "$project_dir/sdkconfig.defaults.$preset" ]]; then
+    sdkconfig_defaults+=";$project_dir/sdkconfig.defaults.$preset"
+fi
+
+exec idf.py -B "build/$preset" \
+    -D "SDKCONFIG=$sdkconfig" \
+    -D "SDKCONFIG_DEFAULTS=$sdkconfig_defaults" \
+    "$@"

@@ -8,6 +8,10 @@
 #include "esp_log.h"
 
 static const char *TAG = "elobau_angle_sensor_config";
+static const char *const ANGLE_SENSOR_CONFIG_TYPES[] = {
+    "elobau_424A11A040B",
+    "elobau_424A11A060B",
+};
 
 static angle_sensor_config_t angle_sensor_config = {
     .sensor_gpio_number = -1,
@@ -16,9 +20,69 @@ static angle_sensor_config_t angle_sensor_config = {
     .sensor_topic = "sensors/rudders/starboard",
 };
 
+static void apply_positive_integer_member(const cJSON *configuration,
+                                          const char *member_name,
+                                          int *destination);
+static void apply_sensor_pin(const cJSON *configuration);
+static void apply_topic(const cJSON *configuration);
+
 const angle_sensor_config_t *angle_sensor_config_get(void)
 {
     return &angle_sensor_config;
+}
+
+static void apply_configuration(const cJSON *configuration)
+{
+    apply_sensor_pin(configuration);
+    apply_positive_integer_member(configuration, "sensor_sample_period_ms",
+                                  &angle_sensor_config.sensor_sample_period_ms);
+    apply_positive_integer_member(configuration, "sensor_samples_per_reading",
+                                  &angle_sensor_config.sensor_samples_per_reading);
+    apply_topic(configuration);
+}
+
+bool angle_sensor_configure(const cJSON *configuration)
+{
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(configuration, "type"));
+
+    /* Check that the type is known. return false otherwise.*/
+    bool known_type = false;
+    for (size_t i = 0; i < sizeof(ANGLE_SENSOR_CONFIG_TYPES) /
+                               sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
+         ++i)
+    {
+        if (type != NULL && strcmp(type, ANGLE_SENSOR_CONFIG_TYPES[i]) == 0)
+        {
+            known_type = true;
+            break;
+        }
+    }
+    if (!known_type)
+    {
+        return false;
+    }
+    /* validate the incoming configuration */
+    const cJSON *sensor_pin = cJSON_GetObjectItemCaseSensitive(configuration, "sensor_pin");
+    const cJSON *sample_period =
+        cJSON_GetObjectItemCaseSensitive(configuration, "sensor_sample_period_ms");
+    const cJSON *samples_per_reading =
+        cJSON_GetObjectItemCaseSensitive(configuration, "sensor_samples_per_reading");
+    const char *topic = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(configuration, "sensor_topic"));
+
+    if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
+        sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
+        samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
+        strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE)
+    {
+        ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
+                      "sensor_sample_period_ms and sensor_samples_per_reading");
+        return false;
+    }
+    /* below this line the configuration is considered valid */
+    apply_configuration(configuration);
+    return true;
 }
 
 void angle_sensor_config_restore(const angle_sensor_config_t *configuration)
@@ -128,7 +192,7 @@ size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size)
         buffer, buffer_size,
         "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
         "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
-        ANGLE_SENSOR_CONFIG_TYPE, angle_sensor_config.sensor_gpio_number,
+        ANGLE_SENSOR_CONFIG_TYPES[0], angle_sensor_config.sensor_gpio_number,
         angle_sensor_config.sensor_samples_per_reading,
         angle_sensor_config.sensor_sample_period_ms, angle_sensor_config.sensor_topic);
     return length < 0 || (size_t)length >= buffer_size ? 0U : (size_t)length;

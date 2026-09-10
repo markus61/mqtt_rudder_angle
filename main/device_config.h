@@ -2,6 +2,8 @@
 
 #include <stdbool.h>
 
+#include "device_config.h"
+
 #include "cJSON.h"
 #include "esp_err.h"
 
@@ -17,6 +19,19 @@ extern "C"
 
 /* Longest MQTT topic accepted from the configuration document. */
 #define DEVICE_CONFIG_TOPIC_SIZE 64
+
+    /**
+     * @brief Apply a configuration document received from the broker.
+     *
+     * The document must carry a "now" member holding an RFC3339 timestamp, which
+     * is used to set the device clock.
+     *
+     * @param payload Null-terminated configuration document.
+     * @return true only if the device clock was set from "now", so the caller can
+     *         stop listening for it; false if the payload was rejected.
+     */
+
+    bool device_configure_from_mqtt(const char *payload);
 
     /**
      * @brief The device settings that outlive a configuration document.
@@ -47,7 +62,7 @@ extern "C"
      *
      * @param configuration Parsed JSON object; ignored when NULL.
      */
-    void device_config_apply_json(const cJSON *configuration);
+    void device_config_validate(const cJSON *configuration);
 
     /**
      * @brief Restore the device settings record from NVS.

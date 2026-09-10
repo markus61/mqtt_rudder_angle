@@ -1,8 +1,8 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.extensionActivationMode": "always",
-  "idf.buildPath": "${workspaceFolder}/build/default",
-  "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig",
+  "idf.buildPath": "${workspaceFolder}/build/.${presetName}",
+  "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig.${presetName}",
   "idf.flashType": "UART",
   "cmake.configureOnOpen": false,
   "cmake.configureOnEdit": false,
@@ -29,5 +29,11 @@
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
-  "idf.port": "/dev/ttyUSB0"
+  "idf.port": "/dev/ttyUSB0",
+  "clangd.path": "/home/markus/.espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/home/markus/src/espressif/ManT1S-Angle/build/default"
+  ]
 }

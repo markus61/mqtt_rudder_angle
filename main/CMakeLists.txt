@@ -3,13 +3,14 @@ idf_component_register(
     "main.c"
     "mant1s_ethernet.c"
     "init_mqtt.c"
-    "configuration.c"
     "device_config.c"
+    "device_utils.c"
     "features_config.c"
-    "elobau_angle_sensor_config.c"
-    "elobau_angle_sensor.c"
+    "adc/elobau_angle_sensor_config.c"
+    "adc/elobau_angle_sensor.c"
     INCLUDE_DIRS
     "."
+    "adc"
 
     # With set(COMPONENTS main) in the top-level CMakeLists, main no longer
     # gets an implicit dependency on every component, so list them explicitly.

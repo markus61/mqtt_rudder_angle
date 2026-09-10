@@ -11,56 +11,35 @@
 
 static const char *TAG = "features_config";
 
-/* A configure_sensor action is self-contained: it identifies the sensor
+/* A configure_sensor action configures a single sensor. it identifies the sensor
  * type and provides each setting required to bring that sensor online. */
-bool features_config_validate_sensor_configuration_action(const cJSON *action_json)
+esp_err_t features_config_configure_sensor(const cJSON *action_json)
 {
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "type"));
-    if (type == NULL || strcmp(type, ANGLE_SENSOR_CONFIG_TYPE) != 0)
+    if (type == NULL)
     {
-        ESP_LOGW(TAG, "configure_sensor requires type '%s'", ANGLE_SENSOR_CONFIG_TYPE);
-        return false;
-    }
-
-    const cJSON *sensor_pin = cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin");
-    const cJSON *sample_period =
-        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_sample_period_ms");
-    const cJSON *samples_per_reading =
-        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_samples_per_reading");
-    const char *topic = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_topic"));
-
-    if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
-        sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
-        samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
-        strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE)
-    {
-        ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
-                      "sensor_sample_period_ms and sensor_samples_per_reading");
-        return false;
-    }
-
-    return true;
-}
-
-esp_err_t features_config_configure_sensor(const cJSON *action_json)
-{
-    if (!features_config_validate_sensor_configuration_action(action_json))
-    {
+        ESP_LOGW(TAG, "configure_sensor requires a valid value for 'type'");
         return ESP_ERR_INVALID_ARG;
     }
-
-    const int sensor_pin =
-        cJSON_GetObjectItemCaseSensitive(action_json, "sensor_pin")->valueint;
-    angle_sensor_config_apply_json(action_json);
-    if (angle_sensor_config_get()->sensor_gpio_number != sensor_pin)
+    bool config_success = false;
+    if (angle_sensor_configure(action_json))
     {
-        ESP_LOGW(TAG, "Could not configure angle sensor: sensor_pin %d is unusable", sensor_pin);
-        return ESP_ERR_INVALID_ARG;
+        if (angle_sensor_start() == ESP_OK)
+        {
+            config_success = true;
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Failed to start angle sensor, reverting to stored configuration");
+            features_config_load_from_nvs();
+        }
     }
-
-    return angle_sensor_start();
+    if (config_success)
+    {
+        features_config_store_to_nvs();
+    }
+    return config_success ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 size_t features_config_format_json(char *buffer, size_t buffer_size)

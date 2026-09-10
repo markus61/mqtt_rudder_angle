@@ -5,6 +5,7 @@ cmake-build-*/
 sdkconfig
 sdkconfig.old
 sdkconfig.ci
+sdkconfig.*
 
 # Managed components are restored by `idf.py reconfigure` from idf_component.yml
 managed_components/

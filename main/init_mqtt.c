@@ -95,6 +95,15 @@ static void format_config_response_topic(char *buffer, size_t buffer_size)
     buffer[topic_length] = '\0';
 }
 
+/* Control channels are namespaced under "control/"; the persisted setting is
+ * only the device name. */
+static bool format_control_topic(char *buffer, size_t buffer_size)
+{
+    const char *device_name = device_config_get()->name;
+    const int length = snprintf(buffer, buffer_size, "control/%s", device_name);
+    return device_name[0] != '\0' && length >= 0 && (size_t)length < buffer_size;
+}
+
 /* Maps an incoming topic, which is not null terminated, onto the topic enum. */
 static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
 {
@@ -107,8 +116,8 @@ static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
         return MQTT_TOPIC_CONFIGURE_RESPONSE;
     }
 
-    const char *control_topic = device_config_get()->control_topic;
-    if (control_topic[0] != '\0' &&
+    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
+    if (format_control_topic(control_topic, sizeof(control_topic)) &&
         (size_t)topic_length == strlen(control_topic) &&
         strncmp(topic, control_topic, (size_t)topic_length) == 0)
     {
@@ -146,8 +155,7 @@ static void device_control_braindump()
     }
 
     const device_config_t *device_config = device_config_get();
-    const char *device_name = strrchr(device_config->control_topic, '/');
-    device_name = device_name != NULL ? device_name + 1 : device_config->control_topic;
+    const char *device_name = device_config->name;
     if (device_name[0] == '\0')
     {
         ESP_LOGW(TAG, "Cannot publish braindump without a device name");
@@ -184,6 +192,13 @@ static void device_control_braindump()
         return;
     }
 
+    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
+    if (!format_control_topic(control_topic, sizeof(control_topic)))
+    {
+        ESP_LOGE(TAG, "Could not format braindump control topic");
+        return;
+    }
+
     char state_json[1024];
     const int state_length = snprintf(
         state_json, sizeof(state_json),
@@ -192,7 +207,7 @@ static void device_control_braindump()
         "\"device\":{\"control_topic\":\"%s\"},\"features\":%s}",
         timestamp, mac_address_string, esp_app_get_description()->version, running_partition_label,
         running_partition_size, device_is_configured ? "true" : "false",
-        device_config->control_topic, features_json);
+        control_topic, features_json);
     if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
     {
         ESP_LOGE(TAG, "Braindump state is too large");
@@ -267,13 +282,12 @@ static void subscribe_config_response(esp_mqtt_client_handle_t client)
     esp_mqtt_client_subscribe(client, response_topic, 1);
 }
 
-/* The control topic comes from the configuration document rather than being
- * derived from the MAC, so a device that was never told one simply has no
- * control channel and there is nothing to subscribe to. */
+/* The control channel is derived from the configured device name. A device
+ * with no name has no control channel to subscribe to. */
 static void subscribe_control_topic(esp_mqtt_client_handle_t client)
 {
-    const char *control_topic = device_config_get()->control_topic;
-    if (control_topic[0] == '\0')
+    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
+    if (!format_control_topic(control_topic, sizeof(control_topic)))
     {
         ESP_LOGI(TAG, "No control topic configured, not subscribing");
         return;

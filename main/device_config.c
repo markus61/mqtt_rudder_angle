@@ -15,44 +15,27 @@ const device_config_t *device_config_get(void)
     return &device_config;
 }
 
-/* Reads a topic member, leaving the destination untouched when the member is
- * absent, empty or too long. Topics validate identically, so they share
- * one helper rather than a copy each. */
-static void validate_topic(const cJSON *configuration, const char *member_name,
-                           char *destination, size_t destination_size)
-{
-    const char *topic = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(configuration, member_name));
-    if (topic == NULL)
-    {
-        return;
-    }
-
-    if (topic[0] == '\0')
-    {
-        ESP_LOGE(TAG, "\"%s\" must not be empty, keeping '%s'", member_name, destination);
-        return;
-    }
-    if (strlen(topic) >= destination_size)
-    {
-        ESP_LOGE(TAG, "\"%s\" is longer than %d characters, keeping '%s'",
-                 member_name, (int)destination_size - 1, destination);
-        return;
-    }
-
-    strlcpy(destination, topic, destination_size);
-}
-
+/** Validate and store the bare device name from a configuration document. */
 void device_config_validate(const cJSON *configuration)
 {
     if (configuration == NULL)
     {
         return;
     }
+    const char *name = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(configuration, "your_name"));
 
-    validate_topic(configuration, "control_topic", device_config.control_topic,
-                   sizeof(device_config.control_topic));
-    ESP_LOGI(TAG, "Device settings: control topic='%s'", device_config.control_topic);
+    const size_t max_name_length = DEVICE_CONFIG_TOPIC_SIZE - sizeof("control/");
+    if (name != NULL && name[0] != '\0' && strlen(name) <= max_name_length)
+    {
+        strlcpy(device_config.name, name, sizeof(device_config.name));
+    }
+    else if (name != NULL)
+    {
+        ESP_LOGE(TAG, "\"your_name\" must be non-empty and at most %d characters, keeping '%s'",
+                 (int)max_name_length, device_config.name);
+    }
+    ESP_LOGI(TAG, "Device settings: name='%s'", device_config.name);
 }
 
 /**

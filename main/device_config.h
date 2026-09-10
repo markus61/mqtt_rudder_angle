@@ -19,6 +19,7 @@ extern "C"
 
 /* Longest MQTT topic accepted from the configuration document. */
 #define DEVICE_CONFIG_TOPIC_SIZE 64
+#define DEVICE_CONFIG_NAME_SIZE 64
 
     /**
      * @brief Apply a configuration document received from the broker.
@@ -40,10 +41,10 @@ extern "C"
      */
     typedef struct
     {
-        /* Topic the device listens on for commands. Empty until a configuration
+        /* Name of the device. Empty until a configuration
          * document supplies one, because there is no sensible default: a guessed
-         * topic would either collide with another device or be silently wrong. */
-        char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
+         * name would either collide with another device or be silently wrong. */
+        char name[DEVICE_CONFIG_NAME_SIZE];
     } device_config_t;
 
     /**

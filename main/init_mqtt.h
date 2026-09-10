@@ -40,6 +40,9 @@ esp_err_t init_mqtt(void);
  */
 bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees);
 
+/** Publish the current device state in response to a braindump action. */
+void mqtt_publish_braindump(void);
+
 #ifdef __cplusplus
 }
 #endif

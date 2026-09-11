@@ -12,9 +12,12 @@ idf_component_register(
     "registry_read_write.c"
     "adc/elobau_angle_sensor_config.c"
     "adc/elobau_angle_sensor.c"
+    "dummy/uptime_sensor_config.c"
+    "dummy/uptime_sensor.c"
     INCLUDE_DIRS
     "."
     "adc"
+    "dummy"
 
     # With set(COMPONENTS main) in the top-level CMakeLists, main no longer
     # gets an implicit dependency on every component, so list them explicitly.

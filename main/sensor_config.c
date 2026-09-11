@@ -9,6 +9,9 @@
 
 #include "esp_log.h"
 #include "elobau_angle_sensor.h"
+#include "elobau_angle_sensor_config.h"
+#include "uptime_sensor.h"
+#include "uptime_sensor_config.h"
 #include "json_utils.h"
 #include "registry_read_write.h"
 #include "json_generator.h"
@@ -17,15 +20,10 @@ static const char *TAG = "sensor_config";
 
 static registry_t *active_lookup;
 
-#define ATTACHED_FEATURE_COUNT 1U
-
 static feature_entry_t angle_sensor_lookup_config = {
-    .name = "starboard_rudder_angel",
+    .name = "starboard_rudder_angle",
     .type = "angle",
 };
-static feature_entry_t *configuration_storage[ATTACHED_FEATURE_COUNT];
-static feature_entry_t *match_storage[ATTACHED_FEATURE_COUNT];
-static registry_t boot_lookup;
 
 static registry_lookup_result_t empty_result(registry_t *lookup)
 {
@@ -41,27 +39,26 @@ static bool valid_text(const char *text)
     return text != NULL && text[0] != '\0';
 }
 
-bool sensor_config_lookup_init(registry_t *lookup,
-                               feature_entry_t *configuration_storage[],
-                               size_t configuration_capacity,
-                               feature_entry_t *match_storage[], size_t match_capacity)
+static bool append_feature_configuration_json(json_gen_str_t *generator,
+                                              const feature_entry_t *feature)
 {
-    if (lookup == NULL || configuration_storage == NULL || match_storage == NULL ||
-        configuration_capacity == 0U || match_capacity < configuration_capacity)
+    if (strcmp(feature->type, "angle") != 0 || feature->configuration == NULL ||
+        feature->configuration_size != sizeof(angle_sensor_config_t))
     {
         return false;
     }
 
-    lookup->configurations = configuration_storage;
-    lookup->capacity = configuration_capacity;
-    lookup->count = 0U;
-    lookup->matches = match_storage;
-    lookup->match_capacity = match_capacity;
-    active_lookup = lookup;
-    return true;
+    const angle_sensor_config_t *config = feature->configuration;
+    return json_obj_set_escaped_string(generator, "type", config->sensor_type) &&
+           json_gen_obj_set_int(generator, "sensor_pin", config->sensor_gpio_number) == 0 &&
+           json_gen_obj_set_int(generator, "sensor_samples_per_reading",
+                                config->sensor_samples_per_reading) == 0 &&
+           json_gen_obj_set_int(generator, "sensor_sample_period_ms",
+                                config->sensor_sample_period_ms) == 0 &&
+           json_obj_set_escaped_string(generator, "sensor_topic", config->sensor_topic);
 }
 
-bool sensor_config_lookup_add(registry_t *lookup, feature_entry_t *configuration)
+bool registry_feature_add(registry_t *lookup, feature_entry_t *configuration)
 {
     if (lookup == NULL || lookup->configurations == NULL || lookup->matches == NULL ||
         configuration == NULL || !valid_text(configuration->name) ||
@@ -134,7 +131,7 @@ sensor_config_lookup_by_type(registry_t *lookup, const char *type)
     return result;
 }
 
-size_t sensor_json_dump(char *buffer, size_t buffer_size)
+size_t registry_features_json_dump(char *buffer, size_t buffer_size)
 {
     if (buffer == NULL || buffer_size < 3U || active_lookup == NULL ||
         active_lookup->configurations == NULL || buffer_size > INT_MAX)
@@ -164,14 +161,7 @@ size_t sensor_json_dump(char *buffer, size_t buffer_size)
             return 0U;
         }
 
-        if (strcmp(configuration->type, "angle") == 0)
-        {
-            if (!angle_sensor_config_add_json(&generator))
-            {
-                return 0U;
-            }
-        }
-        else
+        if (!append_feature_configuration_json(&generator, configuration))
         {
             return 0U;
         }
@@ -192,45 +182,8 @@ size_t sensor_json_dump(char *buffer, size_t buffer_size)
 
 esp_err_t registry_init_on_boot(void)
 {
-    if (active_lookup == NULL)
-    {
-        if (!sensor_config_lookup_init(&boot_lookup, configuration_storage,
-                                       ATTACHED_FEATURE_COUNT, match_storage,
-                                       ATTACHED_FEATURE_COUNT))
-        {
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        angle_sensor_lookup_config.configuration = (void *)angle_sensor_config_get();
-        angle_sensor_lookup_config.settings_size = angle_sensor_config_size();
-        if (!sensor_config_lookup_add(active_lookup, &angle_sensor_lookup_config))
-        {
-            active_lookup = NULL;
-            return ESP_ERR_INVALID_STATE;
-        }
-    }
-    const esp_err_t err = registry_read(active_lookup);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-
-    for (size_t index = 0U; index < active_lookup->count; ++index)
-    {
-        const feature_entry_t *configuration = active_lookup->configurations[index];
-        if (strcmp(configuration->type, "angle") == 0)
-        {
-            const esp_err_t start_err = angle_sensor_start();
-            if (start_err != ESP_OK)
-            {
-                ESP_LOGE(TAG, "Could not start restored sensor '%s': %s",
-                         configuration->name, esp_err_to_name(start_err));
-                return start_err;
-            }
-        }
-    }
-
-    return ESP_OK;
+    active_lookup = registry_init();
+    return active_lookup == NULL ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
 
 registry_t *registry_active_lookup(void)
@@ -250,21 +203,16 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json)
         return ESP_ERR_INVALID_ARG;
     }
 
-    feature_entry_t configuration = {
+    feature_entry_t entry = {
         .name = name,
         .type = type,
     };
 
-    switch (type[0])
+    if (angle_sensor_can_serve_type(type))
     {
-    case 'e':
-        if (strcmp(type, "elobau_424A11A040B") != 0 &&
-            strcmp(type, "elobau_424A11A060B") != 0)
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-        configuration.configuration = (void *)angle_sensor_config_get();
-        configuration.settings_size = angle_sensor_config_size();
+        entry.configuration = (void *)angle_sensor_config_get();
+        entry.configuration_size = angle_sensor_config_size();
+        ESP_LOGI(TAG, "Configuring angle sensor for type '%s'", type);
         if (!angle_sensor_configure(action_json))
         {
             return ESP_ERR_INVALID_ARG;
@@ -275,20 +223,28 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json)
             (void)registry_read(active_lookup);
             return ESP_ERR_INVALID_STATE;
         }
-        angle_sensor_lookup_config.configuration = configuration.configuration;
-        angle_sensor_lookup_config.settings_size = configuration.settings_size;
-        break;
-
-    default:
-        ESP_LOGW(TAG, "Unsupported sensor type '%s'", type);
-        return ESP_ERR_INVALID_ARG;
+        if (!registry_feature_add(active_lookup, &entry))
+        {
+            return ESP_ERR_INVALID_STATE;
+        }
     }
 
-    /* The sensor entry is registered during boot and owns the persistent storage. */
-    if (active_lookup == NULL ||
-        sensor_config_lookup_by_name(active_lookup, angle_sensor_lookup_config.name).count == 0U)
+    if (uptime_sensor_can_serve_type(type))
     {
-        if (!sensor_config_lookup_add(active_lookup, &angle_sensor_lookup_config))
+        entry.configuration = (void *)uptime_sensor_config_get();
+        entry.configuration_size = uptime_sensor_config_size();
+        ESP_LOGI(TAG, "Configuring uptime sensor for type '%s'", type);
+        if (!uptime_sensor_configure(action_json))
+        {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (uptime_sensor_start() != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed to start uptime sensor, reverting to stored configuration");
+            (void)registry_read(active_lookup);
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (!registry_feature_add(active_lookup, &entry))
         {
             return ESP_ERR_INVALID_STATE;
         }

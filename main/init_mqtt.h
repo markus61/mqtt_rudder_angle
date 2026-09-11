@@ -40,6 +40,9 @@ esp_err_t init_mqtt(void);
  */
 bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees);
 
+/** Publish elapsed uptime in seconds as a JSON sensor reading. */
+bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds);
+
 /** Publish the current device state in response to a braindump action. */
 void mqtt_publish_braindump(void);
 

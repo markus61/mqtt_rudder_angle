@@ -37,6 +37,26 @@ size_t angle_sensor_config_size(void)
     return sizeof(angle_sensor_config);
 }
 
+bool angle_sensor_can_serve_type(const char *type)
+{
+    if (type == NULL)
+    {
+        return false;
+    }
+
+    for (size_t index = 0U;
+         index < sizeof(ANGLE_SENSOR_CONFIG_TYPES) / sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
+         ++index)
+    {
+        if (strcmp(type, ANGLE_SENSOR_CONFIG_TYPES[index]) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /**
  * @brief Apply the entire angle sensor configuration from the JSON object.
  *
@@ -75,19 +95,7 @@ bool angle_sensor_configure(const cJSON *configuration)
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(configuration, "type"));
 
-    /* Check that the type is known. return false otherwise.*/
-    bool known_type = false;
-    for (size_t i = 0; i < sizeof(ANGLE_SENSOR_CONFIG_TYPES) /
-                               sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
-         ++i)
-    {
-        if (type != NULL && strcmp(type, ANGLE_SENSOR_CONFIG_TYPES[i]) == 0)
-        {
-            known_type = true;
-            break;
-        }
-    }
-    if (!known_type)
+    if (!angle_sensor_can_serve_type(type))
     {
         return false;
     }

@@ -82,7 +82,7 @@ void mqtt_publish_braindump(void)
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
     char features_json[256];
-    if (sensor_json_dump(features_json, sizeof(features_json)) == 0U)
+    if (registry_features_json_dump(features_json, sizeof(features_json)) == 0U)
     {
         ESP_LOGE(TAG, "Braindump feature state is too large");
         return;
@@ -129,7 +129,7 @@ void mqtt_publish_braindump(void)
     }
 }
 
-bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
+static bool mqtt_publish_reading(const char *topic, const char *value_name, float value)
 {
     if (mqtt_client == NULL || !mqtt_event_handler_is_connected())
     {
@@ -151,7 +151,7 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
     json_gen_str_start(&generator, reading_json, sizeof(reading_json), NULL, NULL);
     if (json_gen_start_object(&generator) != 0 ||
         !json_obj_set_escaped_string(&generator, "now", timestamp) ||
-        json_gen_obj_set_float(&generator, "angle", angle_degrees) != 0 ||
+        json_gen_obj_set_float(&generator, value_name, value) != 0 ||
         json_gen_end_object(&generator) != 0 ||
         json_gen_str_end(&generator) <= 1)
     {
@@ -170,6 +170,16 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
     }
 
     return true;
+}
+
+bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
+{
+    return mqtt_publish_reading(topic, "angle", angle_degrees);
+}
+
+bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds)
+{
+    return mqtt_publish_reading(topic, "uptime", uptime_seconds);
 }
 
 /* The MQTT broker lives on the gateway handed out by DHCP, so the client can

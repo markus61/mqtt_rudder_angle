@@ -14,6 +14,14 @@
 #define SENSOR_CONFIG_LOOKUP_NVS_KEY "sensor_configs"
 #define SENSOR_CONFIG_LOOKUP_NVS_MAGIC UINT32_C(0x53434647)
 #define SENSOR_CONFIG_LOOKUP_NVS_VERSION UINT16_C(1)
+#define REGISTRY_INITIAL_CAPACITY 10U
+
+/* The registry owns only its pointer indexes; individual sensors own their
+ * configuration records.  Keeping this here lets the registry grow without
+ * teaching its initialization about any sensor implementation. */
+static feature_entry_t *configuration_storage[REGISTRY_INITIAL_CAPACITY];
+static feature_entry_t *match_storage[REGISTRY_INITIAL_CAPACITY];
+static registry_t registry;
 
 typedef struct
 {
@@ -58,12 +66,12 @@ esp_err_t registry_write(const registry_t *lookup)
         const feature_entry_t *configuration = lookup->configurations[index];
         if (configuration == NULL || !valid_text(configuration->name) ||
             !valid_text(configuration->type) || configuration->configuration == NULL ||
-            configuration->settings_size == 0U || strlen(configuration->name) > UINT32_MAX ||
-            strlen(configuration->type) > UINT32_MAX || configuration->settings_size > UINT32_MAX ||
+            configuration->configuration_size == 0U || strlen(configuration->name) > UINT32_MAX ||
+            strlen(configuration->type) > UINT32_MAX || configuration->configuration_size > UINT32_MAX ||
             !size_add(&serialized_size, sizeof(sensor_config_nvs_record_t)) ||
             !size_add(&serialized_size, strlen(configuration->name)) ||
             !size_add(&serialized_size, strlen(configuration->type)) ||
-            !size_add(&serialized_size, configuration->settings_size))
+            !size_add(&serialized_size, configuration->configuration_size))
         {
             return ESP_ERR_INVALID_ARG;
         }
@@ -92,7 +100,7 @@ esp_err_t registry_write(const registry_t *lookup)
         sensor_config_nvs_record_t record = {
             .name_size = (uint32_t)name_size,
             .type_size = (uint32_t)type_size,
-            .settings_size = (uint32_t)configuration->settings_size,
+            .settings_size = (uint32_t)configuration->configuration_size,
         };
         memcpy(cursor, &record, sizeof(record));
         cursor += sizeof(record);
@@ -100,8 +108,8 @@ esp_err_t registry_write(const registry_t *lookup)
         cursor += name_size;
         memcpy(cursor, configuration->type, type_size);
         cursor += type_size;
-        memcpy(cursor, configuration->configuration, configuration->settings_size);
-        cursor += configuration->settings_size;
+        memcpy(cursor, configuration->configuration, configuration->configuration_size);
+        cursor += configuration->configuration_size;
     }
 
     nvs_handle_t nvs_handle;
@@ -135,6 +143,12 @@ static feature_entry_t *find_configuration(registry_t *registry, const char *nam
     return NULL;
 }
 
+/**
+ * @brief Reads the sensor configuration registry from NVS.
+ *
+ * @param registry Pointer to the registry to populate.
+ * @return ESP_OK on success, or an appropriate error code on failure.
+ */
 esp_err_t registry_read(registry_t *registry)
 {
     if (registry == NULL || registry->configurations == NULL || registry->count == 0U ||
@@ -227,7 +241,7 @@ esp_err_t registry_read(registry_t *registry)
             strlen(configuration->type) != record.type_size ||
             memcmp(configuration->type, type, record.type_size) != 0 ||
             configuration->configuration == NULL ||
-            configuration->settings_size != record.settings_size)
+            configuration->configuration_size != record.settings_size)
         {
             err = ESP_ERR_INVALID_STATE;
             goto cleanup;
@@ -259,4 +273,26 @@ esp_err_t registry_read(registry_t *registry)
 cleanup:
     free(serialized);
     return err;
+}
+
+registry_t *registry_init(void)
+{
+    registry.configurations = configuration_storage;
+    registry.capacity = REGISTRY_INITIAL_CAPACITY;
+    registry.count = 0U;
+    registry.matches = match_storage;
+    registry.match_capacity = REGISTRY_INITIAL_CAPACITY;
+
+    if (registry_read(&registry) == ESP_OK)
+    {
+        return &registry;
+    }
+
+    /* A missing or invalid persisted registry must not leave stale pointers
+     * available to callers.  Start with an empty registry so MQTT can build
+     * a new configuration. */
+    memset(configuration_storage, 0, sizeof(configuration_storage));
+    memset(match_storage, 0, sizeof(match_storage));
+    registry.count = 0U;
+    return &registry;
 }

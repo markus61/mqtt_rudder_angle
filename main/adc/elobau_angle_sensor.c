@@ -12,8 +12,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "init_mqtt.h"
-#include "json_generator.h"
-#include "json_utils.h"
 
 static const char *TAG = "angle_sensor";
 
@@ -42,8 +40,6 @@ static TaskHandle_t angle_sensor_task_handle;
 #define SENSOR_MINIMUM_DEGREES -45.0f
 #define SENSOR_MAXIMUM_DEGREES 45.0f
 #define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
-#define ANGLE_SENSOR_CONFIG_DUMP_JSON_SIZE 256U
-
 /* Averages a burst of raw readings and converts the result to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
 {
@@ -260,41 +256,4 @@ release_adc_unit:
     adc_oneshot_del_unit(adc_unit_handle);
     adc_unit_handle = NULL;
     return err;
-}
-
-const char *angle_sensor_config_dump_json(void)
-{
-    /* The two configurable strings are bounded by the configuration module;
-     * leave room for JSON syntax and the decimal representations of the
-     * integer settings. */
-    static char json[ANGLE_SENSOR_CONFIG_DUMP_JSON_SIZE];
-    json_gen_str_t generator;
-    json_gen_str_start(&generator, json, sizeof(json), NULL, NULL);
-
-    if (json_gen_start_object(&generator) != 0 ||
-        !angle_sensor_config_add_json(&generator) ||
-        json_gen_end_object(&generator) != 0)
-    {
-        return NULL;
-    }
-
-    const int length = json_gen_str_end(&generator);
-    return length <= 1 || (size_t)length > sizeof(json) ? NULL : json;
-}
-
-bool angle_sensor_config_add_json(json_gen_str_t *json)
-{
-    if (json == NULL)
-    {
-        return false;
-    }
-
-    const angle_sensor_config_t *config = angle_sensor_config_get();
-    return json_obj_set_escaped_string(json, "type", config->sensor_type) &&
-           json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) == 0 &&
-           json_gen_obj_set_int(json, "sensor_samples_per_reading",
-                                config->sensor_samples_per_reading) == 0 &&
-           json_gen_obj_set_int(json, "sensor_sample_period_ms",
-                                config->sensor_sample_period_ms) == 0 &&
-           json_obj_set_escaped_string(json, "sensor_topic", config->sensor_topic);
 }

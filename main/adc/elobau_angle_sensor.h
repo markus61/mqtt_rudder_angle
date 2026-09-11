@@ -1,3 +1,7 @@
+/**
+ * @file elobau_angle_sensor.h
+ * @brief Interface for the Elobau angle sensor module.
+ */
 #pragma once
 
 #include <stdbool.h>
@@ -5,7 +9,6 @@
 
 #include "cJSON.h"
 #include "esp_err.h"
-#include "json_generator.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -13,7 +16,7 @@ extern "C"
 #endif
 
     /**
-     * @brief Start sampling the angle sensor at 10 Hz.
+     * @brief Start sampling the angle sensor.
      *
      * Reads the pin, sampling configuration and output topic from the angle-sensor
      * configuration, so a configuration document must have supplied a sensor pin
@@ -31,24 +34,14 @@ extern "C"
      */
     esp_err_t angle_sensor_start(void);
 
-    /**
-     * @brief Return this angle sensor's braindump feature object as JSON.
-     *
-     * The returned string is owned by the sensor module and remains valid
-     * until the next call to this function.
-     *
-     * @return A JSON object, or NULL if it could not be formatted.
-     */
-    const char *angle_sensor_config_dump_json(void);
-
-    /** Add the angle sensor's configuration members to an open JSON object. */
-    bool angle_sensor_config_add_json(json_gen_str_t *json);
-
     /** Return the opaque configuration record persisted for this sensor. */
     const void *angle_sensor_config_get(void);
 
     /** Return the size of the sensor's opaque persistent configuration record. */
     size_t angle_sensor_config_size(void);
+
+    /** Return whether this sensor supports the supplied model type. */
+    bool angle_sensor_can_serve_type(const char *type);
 
     /** Validate and apply an angle-sensor configuration action. */
     bool angle_sensor_configure(const cJSON *configuration);

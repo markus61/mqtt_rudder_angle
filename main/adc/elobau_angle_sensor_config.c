@@ -18,6 +18,7 @@ static angle_sensor_config_t angle_sensor_config = {
     .sensor_sample_period_ms = 100,
     .sensor_samples_per_reading = 8,
     .sensor_topic = "sensors/rudders/starboard",
+    .sensor_type = "elobau_424A11A040B",
 };
 
 static void apply_positive_integer_member(const cJSON *configuration,
@@ -25,6 +26,7 @@ static void apply_positive_integer_member(const cJSON *configuration,
                                           int *destination);
 static void apply_sensor_pin(const cJSON *configuration);
 static void apply_topic(const cJSON *configuration);
+static void apply_sensor_type(const cJSON *configuration);
 
 const angle_sensor_config_t *angle_sensor_config_get(void)
 {
@@ -38,12 +40,24 @@ const angle_sensor_config_t *angle_sensor_config_get(void)
  */
 static void apply_configuration(const cJSON *configuration)
 {
+    apply_sensor_type(configuration);
     apply_sensor_pin(configuration);
     apply_positive_integer_member(configuration, "sensor_sample_period_ms",
                                   &angle_sensor_config.sensor_sample_period_ms);
     apply_positive_integer_member(configuration, "sensor_samples_per_reading",
                                   &angle_sensor_config.sensor_samples_per_reading);
     apply_topic(configuration);
+}
+
+static void apply_sensor_type(const cJSON *configuration)
+{
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(configuration, "type"));
+    if (type != NULL)
+    {
+        strlcpy(angle_sensor_config.sensor_type, type,
+                sizeof(angle_sensor_config.sensor_type));
+    }
 }
 
 /**
@@ -211,7 +225,7 @@ void angle_sensor_config_apply_json(const cJSON *configuration)
                                   &angle_sensor_config.sensor_samples_per_reading);
     apply_topic(configuration);
 
-    ESP_LOGI(TAG, "Angle sensor settings: pin=%d, sample period=%d ms, "
+    ESP_LOGI(TAG, "Angle sensor configuration: pin=%d, sample period=%d ms, "
                   "samples per reading=%d, topic='%s'",
              angle_sensor_config.sensor_gpio_number,
              angle_sensor_config.sensor_sample_period_ms,
@@ -232,7 +246,7 @@ size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size)
         buffer, buffer_size,
         "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
         "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
-        ANGLE_SENSOR_CONFIG_TYPES[0], angle_sensor_config.sensor_gpio_number,
+        angle_sensor_config.sensor_type, angle_sensor_config.sensor_gpio_number,
         angle_sensor_config.sensor_samples_per_reading,
         angle_sensor_config.sensor_sample_period_ms, angle_sensor_config.sensor_topic);
     return length < 0 || (size_t)length >= buffer_size ? 0U : (size_t)length;

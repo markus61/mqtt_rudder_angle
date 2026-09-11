@@ -11,6 +11,7 @@ extern "C"
 #endif
 
 #define ANGLE_SENSOR_CONFIG_TOPIC_SIZE 64
+#define ANGLE_SENSOR_TYPE_SIZE 32
 
     typedef struct
     {
@@ -19,6 +20,7 @@ extern "C"
         int sensor_sample_period_ms;
         int sensor_samples_per_reading;
         char sensor_topic[ANGLE_SENSOR_CONFIG_TOPIC_SIZE];
+        char sensor_type[ANGLE_SENSOR_TYPE_SIZE];
     } angle_sensor_config_t;
 
     const angle_sensor_config_t *angle_sensor_config_get(void);

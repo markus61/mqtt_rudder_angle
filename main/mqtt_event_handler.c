@@ -5,7 +5,6 @@
 #include <time.h>
 
 #include "device_config.h"
-#include "features_config.h"
 #include "handle_control_action.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -128,8 +127,7 @@ static void publish_config_request(esp_mqtt_client_handle_t client, const char *
     char request_json[256];
     const esp_partition_t *running_partition = esp_ota_get_running_partition();
     const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
-    const unsigned long running_partition_size = running_partition != NULL ?
-        (unsigned long)running_partition->size : 0;
+    const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
     snprintf(request_json, sizeof(request_json),
              "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
              "\"hardware\":{\"chip\":\"%s\",\"running_partition_size\":%lu,"
@@ -218,8 +216,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             memcpy(payload, event->data, (size_t)payload_length);
             payload[payload_length] = '\0';
             if (device_configure_from_mqtt(payload) &&
-                device_config_store_to_nvs() == ESP_OK &&
-                features_config_store_to_nvs() == ESP_OK)
+                device_config_store_to_nvs() == ESP_OK)
             {
                 device_is_configured = true;
                 unsubscribe_config_response(event->client);

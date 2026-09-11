@@ -6,7 +6,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "features_config.h"
+#include "sensor_config.h"
 #include "init_mqtt.h"
 
 static const char *TAG = "control_action";
@@ -40,10 +40,10 @@ void handle_control_action(const char *payload, int payload_length)
         return;
     }
 
-    const cJSON *name = cJSON_GetObjectItemCaseSensitive(action_json, "name");
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(action_json, "action");
     if (!cJSON_IsString(name) || name->valuestring == NULL)
     {
-        ESP_LOGW(TAG, "Control action is missing a string \"name\" member");
+        ESP_LOGW(TAG, "Control action is missing a string \"action\" member");
         cJSON_Delete(action_json);
         return;
     }
@@ -57,14 +57,10 @@ void handle_control_action(const char *payload, int payload_length)
     case CMD_CONFIGURE_FEATURE:
     {
         ESP_LOGI(TAG, "Handling control action 'configure_feature'");
-        const esp_err_t err = features_config_configure_sensor_from_mqtt(action_json);
+        const esp_err_t err = sensor_config_from_mqtt(action_json);
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "Could not configure feature: %s", esp_err_to_name(err));
-        }
-        else if (features_config_store_to_nvs() != ESP_OK)
-        {
-            ESP_LOGW(TAG, "Could not persist feature configuration");
         }
         break;
     }

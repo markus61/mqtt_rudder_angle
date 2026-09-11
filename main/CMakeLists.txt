@@ -7,7 +7,8 @@ idf_component_register(
     "mqtt_event_handler.c"
     "device_config.c"
     "device_utils.c"
-    "features_config.c"
+    "sensor_config.c"
+    "registry_read_write.c"
     "adc/elobau_angle_sensor_config.c"
     "adc/elobau_angle_sensor.c"
     INCLUDE_DIRS

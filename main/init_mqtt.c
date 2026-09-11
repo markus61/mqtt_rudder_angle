@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "device_config.h"
-#include "features_config.h"
+#include "sensor_config.h"
 #include "mqtt_event_handler.h"
 #include "esp_app_desc.h"
 #include "esp_event.h"
@@ -80,7 +80,7 @@ void mqtt_publish_braindump(void)
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
     char features_json[256];
-    if (features_config_dump(features_json, sizeof(features_json)) == 0U)
+    if (sensor_json_dump(features_json, sizeof(features_json)) == 0U)
     {
         ESP_LOGE(TAG, "Braindump feature state is too large");
         return;

@@ -63,7 +63,12 @@ void app_main(void)
     /* Restore separate device and feature records. A device that has never
      * been configured simply has nothing stored yet. */
     device_config_load_from_nvs();
-    registry_init_on_boot();
+    const esp_err_t registry_err = registry_init_on_boot();
+    if (registry_err != ESP_OK && registry_err != ESP_ERR_NVS_NOT_FOUND)
+    {
+        ESP_LOGW(TAG, "Could not restore sensor registry: %s",
+                 esp_err_to_name(registry_err));
+    }
 
     /* MQTT is handled in init_mqtt.c: once DHCP delivers a lease, a client
      * connects to the broker on the gateway and publishes a configuration

@@ -1,10 +1,13 @@
+/**
+ * @file sensor_config.c
+ * @brief Implementation of sensor configuration management.
+ */
 #include "sensor_config.h"
 
 #include <string.h>
 
 #include "esp_log.h"
 #include "elobau_angle_sensor.h"
-#include "elobau_angle_sensor_config.h"
 #include "registry_read_write.h"
 
 static const char *TAG = "sensor_config";
@@ -33,6 +36,64 @@ static registry_lookup_result_t empty_result(registry_t *lookup)
 static bool valid_text(const char *text)
 {
     return text != NULL && text[0] != '\0';
+}
+
+/* Append a JSON string while preserving enough space for the closing feature
+ * and array delimiters.  Registry names originate outside the firmware, so
+ * they must not be inserted into a braindump verbatim. */
+static bool append_json_string(char *buffer, size_t buffer_size, size_t *length,
+                               const char *text)
+{
+    static const char hex[] = "0123456789abcdef";
+
+    if (buffer == NULL || length == NULL || text == NULL || *length >= buffer_size ||
+        buffer_size - *length < 2U)
+    {
+        return false;
+    }
+
+    buffer[(*length)++] = '\"';
+    for (const unsigned char *cursor = (const unsigned char *)text; *cursor != '\0';
+         ++cursor)
+    {
+        if (*cursor == '\"' || *cursor == '\\')
+        {
+            if (buffer_size - *length < 2U)
+            {
+                return false;
+            }
+            buffer[(*length)++] = '\\';
+            buffer[(*length)++] = (char)*cursor;
+        }
+        else if (*cursor < 0x20U)
+        {
+            if (buffer_size - *length < 6U)
+            {
+                return false;
+            }
+            buffer[(*length)++] = '\\';
+            buffer[(*length)++] = 'u';
+            buffer[(*length)++] = '0';
+            buffer[(*length)++] = '0';
+            buffer[(*length)++] = hex[*cursor >> 4U];
+            buffer[(*length)++] = hex[*cursor & 0x0fU];
+        }
+        else
+        {
+            if (buffer_size - *length < 1U)
+            {
+                return false;
+            }
+            buffer[(*length)++] = (char)*cursor;
+        }
+    }
+
+    if (buffer_size - *length < 1U)
+    {
+        return false;
+    }
+    buffer[(*length)++] = '\"';
+    return true;
 }
 
 bool sensor_config_lookup_init(registry_t *lookup,
@@ -142,7 +203,8 @@ size_t sensor_json_dump(char *buffer, size_t buffer_size)
     for (size_t index = 0U; index < active_lookup->count; ++index)
     {
         const feature_entry_t *configuration = active_lookup->configurations[index];
-        if (configuration == NULL || configuration->type == NULL)
+        if (configuration == NULL || !valid_text(configuration->name) ||
+            !valid_text(configuration->type))
         {
             return 0U;
         }
@@ -156,17 +218,41 @@ size_t sensor_json_dump(char *buffer, size_t buffer_size)
             buffer[length++] = ',';
         }
 
-        size_t configuration_length = 0U;
-        if (strcmp(configuration->type, "angle") == 0)
-        {
-            configuration_length = angle_sensor_config_format_feature_json(
-                buffer + length, buffer_size - length - 1U);
-        }
-
-        if (configuration_length == 0U)
+        /* The sensor formatter provides the type-specific properties.  Prefix
+         * the object with the registry identity so consumers can associate a
+         * feature state with the name used in control messages. */
+        if (length + sizeof("{\"name\":") > buffer_size)
         {
             return 0U;
         }
+        buffer[length++] = '{';
+        memcpy(buffer + length, "\"name\":", sizeof("\"name\":") - 1U);
+        length += sizeof("\"name\":") - 1U;
+        if (!append_json_string(buffer, buffer_size, &length, configuration->name) ||
+            length + 2U > buffer_size)
+        {
+            return 0U;
+        }
+
+        const char *configuration_json = NULL;
+        if (strcmp(configuration->type, "angle") == 0)
+        {
+            configuration_json = angle_sensor_config_dump_json();
+        }
+
+        if (configuration_json == NULL || configuration_json[0] != '{')
+        {
+            return 0U;
+        }
+        const size_t configuration_length = strlen(configuration_json);
+        if (configuration_length + 1U > buffer_size - length)
+        {
+            return 0U;
+        }
+        /* The leading brace belongs to the type-specific object; replace it
+         * with the separator needed after the registry name. */
+        buffer[length] = ',';
+        memcpy(buffer + length + 1U, configuration_json + 1U, configuration_length);
         length += configuration_length;
     }
 
@@ -191,14 +277,35 @@ esp_err_t registry_init_on_boot(void)
         }
 
         angle_sensor_lookup_config.configuration = (void *)angle_sensor_config_get();
-        angle_sensor_lookup_config.settings_size = sizeof(angle_sensor_config_t);
+        angle_sensor_lookup_config.settings_size = angle_sensor_config_size();
         if (!sensor_config_lookup_add(active_lookup, &angle_sensor_lookup_config))
         {
             active_lookup = NULL;
             return ESP_ERR_INVALID_STATE;
         }
     }
-    return registry_read(active_lookup);
+    const esp_err_t err = registry_read(active_lookup);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    for (size_t index = 0U; index < active_lookup->count; ++index)
+    {
+        const feature_entry_t *configuration = active_lookup->configurations[index];
+        if (strcmp(configuration->type, "angle") == 0)
+        {
+            const esp_err_t start_err = angle_sensor_start();
+            if (start_err != ESP_OK)
+            {
+                ESP_LOGE(TAG, "Could not start restored sensor '%s': %s",
+                         configuration->name, esp_err_to_name(start_err));
+                return start_err;
+            }
+        }
+    }
+
+    return ESP_OK;
 }
 
 registry_t *registry_active_lookup(void)
@@ -232,7 +339,7 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json)
             return ESP_ERR_INVALID_ARG;
         }
         configuration.configuration = (void *)angle_sensor_config_get();
-        configuration.settings_size = sizeof(angle_sensor_config_t);
+        configuration.settings_size = angle_sensor_config_size();
         if (!angle_sensor_configure(action_json))
         {
             return ESP_ERR_INVALID_ARG;

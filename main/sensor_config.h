@@ -79,7 +79,7 @@ extern "C"
     registry_lookup_result_t
     sensor_config_lookup_by_type(registry_t *lookup, const char *type);
 
-    /** Write every registered sensor configuration as a JSON array. */
+    /** Write every registered sensor configuration, including its name, as a JSON array. */
     size_t sensor_json_dump(char *buffer, size_t buffer_size);
 
     esp_err_t registry_init_on_boot(void);

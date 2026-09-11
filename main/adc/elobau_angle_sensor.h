@@ -1,5 +1,9 @@
 #pragma once
 
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "cJSON.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -27,11 +31,23 @@ extern "C"
     esp_err_t angle_sensor_start(void);
 
     /**
-     * @brief Handle a request to calibrate the angle sensor.
+     * @brief Return this angle sensor's braindump feature object as JSON.
      *
-     * The current sensor voltage is captured as the centered reference.
+     * The returned string is owned by the sensor module and remains valid
+     * until the next call to this function.
+     *
+     * @return A JSON object, or NULL if it could not be formatted.
      */
-    void angle_sensor_calibrate(void);
+    const char *angle_sensor_config_dump_json(void);
+
+    /** Return the opaque configuration record persisted for this sensor. */
+    const void *angle_sensor_config_get(void);
+
+    /** Return the size of the sensor's opaque persistent configuration record. */
+    size_t angle_sensor_config_size(void);
+
+    /** Validate and apply an angle-sensor configuration action. */
+    bool angle_sensor_configure(const cJSON *configuration);
 
 #ifdef __cplusplus
 }

@@ -23,19 +23,11 @@ extern "C"
         char sensor_type[ANGLE_SENSOR_TYPE_SIZE];
     } angle_sensor_config_t;
 
-    const angle_sensor_config_t *angle_sensor_config_get(void);
-
-    /* Check that a complete angle-sensor configuration action has valid members. */
-    bool angle_sensor_configure(const cJSON *configuration);
-
     /* Restore a previously validated configuration record from NVS. */
     void angle_sensor_config_restore(const angle_sensor_config_t *configuration);
 
     /* Overlay the angle-sensor members of a parsed configuration document. */
     void angle_sensor_config_apply_json(const cJSON *configuration);
-
-    /** Write this sensor's braindump feature object and return its length, or 0 on failure. */
-    size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }

@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
 
 #include "elobau_angle_sensor_config.h"
 #include "esp_adc/adc_cali.h"
@@ -39,6 +40,7 @@ static TaskHandle_t angle_sensor_task_handle;
 #define SENSOR_MINIMUM_DEGREES -45.0f
 #define SENSOR_MAXIMUM_DEGREES 45.0f
 #define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
+#define ANGLE_SENSOR_CONFIG_DUMP_JSON_SIZE 256U
 
 /* Averages a burst of raw readings and converts the result to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts, int samples_per_reading)
@@ -256,4 +258,22 @@ release_adc_unit:
     adc_oneshot_del_unit(adc_unit_handle);
     adc_unit_handle = NULL;
     return err;
+}
+
+const char *angle_sensor_config_dump_json(void)
+{
+    /* The two configurable strings are bounded by the configuration module;
+     * leave room for JSON syntax and the decimal representations of the
+     * integer settings. */
+    static char json[ANGLE_SENSOR_CONFIG_DUMP_JSON_SIZE];
+    const angle_sensor_config_t *config = angle_sensor_config_get();
+
+    const int length = snprintf(
+        json, sizeof(json),
+        "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
+        "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
+        config->sensor_type, config->sensor_gpio_number,
+        config->sensor_samples_per_reading, config->sensor_sample_period_ms,
+        config->sensor_topic);
+    return length < 0 || (size_t)length >= sizeof(json) ? NULL : json;
 }

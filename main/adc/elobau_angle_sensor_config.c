@@ -1,6 +1,5 @@
 #include "elobau_angle_sensor_config.h"
 
-#include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -28,9 +27,14 @@ static void apply_sensor_pin(const cJSON *configuration);
 static void apply_topic(const cJSON *configuration);
 static void apply_sensor_type(const cJSON *configuration);
 
-const angle_sensor_config_t *angle_sensor_config_get(void)
+const void *angle_sensor_config_get(void)
 {
     return &angle_sensor_config;
+}
+
+size_t angle_sensor_config_size(void)
+{
+    return sizeof(angle_sensor_config);
 }
 
 /**
@@ -231,23 +235,4 @@ void angle_sensor_config_apply_json(const cJSON *configuration)
              angle_sensor_config.sensor_sample_period_ms,
              angle_sensor_config.sensor_samples_per_reading,
              angle_sensor_config.sensor_topic);
-}
-
-/**
- * @brief Format the angle sensor configuration as a JSON string.
- *
- * @param buffer The buffer to write the JSON string into.
- * @param buffer_size The size of the buffer.
- * @return The number of characters written, or 0 if the buffer was too small.
- */
-size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size)
-{
-    const int length = snprintf(
-        buffer, buffer_size,
-        "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
-        "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
-        angle_sensor_config.sensor_type, angle_sensor_config.sensor_gpio_number,
-        angle_sensor_config.sensor_samples_per_reading,
-        angle_sensor_config.sensor_sample_period_ms, angle_sensor_config.sensor_topic);
-    return length < 0 || (size_t)length >= buffer_size ? 0U : (size_t)length;
 }

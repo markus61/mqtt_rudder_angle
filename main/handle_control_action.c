@@ -57,7 +57,7 @@ void handle_control_action(const char *payload, int payload_length)
     case CMD_CONFIGURE_FEATURE:
     {
         ESP_LOGI(TAG, "Handling control action 'configure_feature'");
-        const esp_err_t err = features_config_configure_sensor(action_json);
+        const esp_err_t err = features_config_configure_sensor_from_mqtt(action_json);
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "Could not configure feature: %s", esp_err_to_name(err));

@@ -80,7 +80,7 @@ void mqtt_publish_braindump(void)
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
     char features_json[256];
-    if (features_config_format_json(features_json, sizeof(features_json)) == 0U)
+    if (features_config_dump(features_json, sizeof(features_json)) == 0U)
     {
         ESP_LOGE(TAG, "Braindump feature state is too large");
         return;
@@ -113,7 +113,6 @@ void mqtt_publish_braindump(void)
         ESP_LOGW(TAG, "Failed to publish braindump to '%s'", reply_topic);
     }
 }
-
 
 bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
 {

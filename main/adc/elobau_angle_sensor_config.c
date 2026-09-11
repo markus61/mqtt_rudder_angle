@@ -31,6 +31,11 @@ const angle_sensor_config_t *angle_sensor_config_get(void)
     return &angle_sensor_config;
 }
 
+/**
+ * @brief Apply the entire angle sensor configuration from the JSON object.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ */
 static void apply_configuration(const cJSON *configuration)
 {
     apply_sensor_pin(configuration);
@@ -41,6 +46,12 @@ static void apply_configuration(const cJSON *configuration)
     apply_topic(configuration);
 }
 
+/**
+ * @brief Configure the angle sensor with the given JSON configuration.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ * @return true if the configuration was successfully applied, false otherwise.
+ */
 bool angle_sensor_configure(const cJSON *configuration)
 {
     const char *type = cJSON_GetStringValue(
@@ -112,6 +123,13 @@ static bool sensor_pin_is_usable(int gpio_number)
     return true;
 }
 
+/**
+ * @brief Apply a positive integer member from the JSON object to the destination variable.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ * @param member_name The name of the member to apply.
+ * @param destination Pointer to the destination variable.
+ */
 static void apply_positive_integer_member(const cJSON *configuration, const char *member_name,
                                           int *destination)
 {
@@ -129,6 +147,11 @@ static void apply_positive_integer_member(const cJSON *configuration, const char
     *destination = member->valueint;
 }
 
+/**
+ * @brief Apply the sensor pin configuration from the JSON object.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ */
 static void apply_sensor_pin(const cJSON *configuration)
 {
     const cJSON *member = cJSON_GetObjectItemCaseSensitive(configuration, "sensor_pin");
@@ -147,6 +170,11 @@ static void apply_sensor_pin(const cJSON *configuration)
     }
 }
 
+/**
+ * @brief Copy the sensor topic configuration from the JSON object into the actual angle sensor configuration.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ */
 static void apply_topic(const cJSON *configuration)
 {
     const char *topic = cJSON_GetStringValue(
@@ -164,6 +192,11 @@ static void apply_topic(const cJSON *configuration)
     strlcpy(angle_sensor_config.sensor_topic, topic, sizeof(angle_sensor_config.sensor_topic));
 }
 
+/**
+ * @brief Apply the angle sensor configuration from the JSON object.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ */
 void angle_sensor_config_apply_json(const cJSON *configuration)
 {
     if (configuration == NULL)
@@ -186,6 +219,13 @@ void angle_sensor_config_apply_json(const cJSON *configuration)
              angle_sensor_config.sensor_topic);
 }
 
+/**
+ * @brief Format the angle sensor configuration as a JSON string.
+ *
+ * @param buffer The buffer to write the JSON string into.
+ * @param buffer_size The size of the buffer.
+ * @return The number of characters written, or 0 if the buffer was too small.
+ */
 size_t angle_sensor_config_format_feature_json(char *buffer, size_t buffer_size)
 {
     const int length = snprintf(

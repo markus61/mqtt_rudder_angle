@@ -1,3 +1,8 @@
+/**
+ * @file features_config.c
+ * @brief Implementation of features configuration management, including loading from
+ * and storing to NVS, and applying feature-specific settings.
+ */
 #include "features_config.h"
 
 #include <stdint.h>
@@ -11,9 +16,18 @@
 
 static const char *TAG = "features_config";
 
-/* A configure_sensor action configures a single sensor. it identifies the sensor
- * type and provides each setting required to bring that sensor online. */
-esp_err_t features_config_configure_sensor(const cJSON *action_json)
+/**
+ * @brief Configure a single sensor based on the provided JSON action.
+ *
+ * A configure_sensor action configures a single sensor. it identifies the sensor
+ * type and provides each setting required to bring that sensor online.
+ *
+ * @param action_json The cJSON object containing the configure_sensor action.
+ * @return ESP_OK if the sensor was successfully configured and started,
+ *         ESP_ERR_INVALID_ARG if the action JSON is invalid,
+ *         ESP_ERR_INVALID_STATE if the sensor could not be started.
+ */
+esp_err_t features_config_configure_sensor_from_mqtt(const cJSON *action_json)
 {
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "type"));
@@ -42,7 +56,7 @@ esp_err_t features_config_configure_sensor(const cJSON *action_json)
     return config_success ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
-size_t features_config_format_json(char *buffer, size_t buffer_size)
+size_t features_config_dump(char *buffer, size_t buffer_size)
 {
     if (buffer_size < 3U)
     {

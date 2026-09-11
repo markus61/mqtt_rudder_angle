@@ -28,8 +28,10 @@ extern "C"
      * is used to set the device clock.
      *
      * @param payload Null-terminated configuration document.
-     * @return true only if the device clock was set from "now", so the caller can
-     *         stop listening for it; false if the payload was rejected.
+     * @return true when the document is valid and its device settings have
+     *         been applied; false if the payload was rejected.  The optional
+     *         "now" member is applied to the clock independently and does not
+     *         determine whether device settings are accepted.
      */
 
     bool device_configure_from_mqtt(const char *payload);
@@ -58,12 +60,14 @@ extern "C"
     /**
      * @brief Overlay a parsed configuration document onto the current settings.
      *
-     * Only members actually present in the document are touched. Values that
-     * fail validation are logged and skipped, keeping the previous setting.
+     * Only members actually present in the document are touched. A supplied
+     * value that fails validation rejects the document without changing the
+     * current setting.
      *
-     * @param configuration Parsed JSON object; ignored when NULL.
+     * @param configuration Parsed JSON object.
+     * @return true when all supplied device settings are valid.
      */
-    void device_config_validate(const cJSON *configuration);
+    bool device_config_validate(const cJSON *configuration);
 
     /**
      * @brief Restore the device settings record from NVS.

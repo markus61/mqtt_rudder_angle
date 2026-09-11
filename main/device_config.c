@@ -1,3 +1,8 @@
+/**
+ * @file device_config.c
+ * @brief Implementation of device configuration management, including loading from and storing to NVS, and validating configuration documents.
+ */
+
 #include "device_config.h"
 #include "device_utils.h"
 
@@ -13,29 +18,6 @@ static device_config_t device_config;
 const device_config_t *device_config_get(void)
 {
     return &device_config;
-}
-
-/** Validate and store the bare device name from a configuration document. */
-void device_config_validate(const cJSON *configuration)
-{
-    if (configuration == NULL)
-    {
-        return;
-    }
-    const char *name = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(configuration, "your_name"));
-
-    const size_t max_name_length = DEVICE_CONFIG_TOPIC_SIZE - sizeof("control/");
-    if (name != NULL && name[0] != '\0' && strlen(name) <= max_name_length)
-    {
-        strlcpy(device_config.name, name, sizeof(device_config.name));
-    }
-    else if (name != NULL)
-    {
-        ESP_LOGE(TAG, "\"your_name\" must be non-empty and at most %d characters, keeping '%s'",
-                 (int)max_name_length, device_config.name);
-    }
-    ESP_LOGI(TAG, "Device settings: name='%s'", device_config.name);
 }
 
 /**
@@ -76,6 +58,12 @@ esp_err_t device_config_load_from_nvs(void)
     return ESP_OK;
 }
 
+/**
+ * @brief Store the current device configuration to NVS.
+ *
+ * @return ESP_OK if the configuration was successfully stored,
+ *         or an error code from the NVS layer.
+ */
 esp_err_t device_config_store_to_nvs(void)
 {
     nvs_handle_t nvs_handle;
@@ -102,14 +90,51 @@ esp_err_t device_config_store_to_nvs(void)
 }
 
 /**
+ * @brief Validate and store the bare device name from a configuration document.
+ *
+ * @param configuration The cJSON object containing the configuration.
+ * @return true if the device name was successfully validated and stored, false otherwise.
+ */
+bool device_config_validate(const cJSON *configuration)
+{
+    if (configuration == NULL)
+    {
+        return false;
+    }
+
+    const cJSON *name_item =
+        cJSON_GetObjectItemCaseSensitive(configuration, "your_name");
+    if (name_item == NULL)
+    {
+        /* A configuration document may update only non-persisted settings,
+         * such as the clock.  Leave the current device settings untouched. */
+        return true;
+    }
+
+    const char *name = cJSON_GetStringValue(name_item);
+
+    const size_t max_name_length = DEVICE_CONFIG_TOPIC_SIZE - sizeof("control/");
+    if (name != NULL && name[0] != '\0' && strlen(name) <= max_name_length)
+    {
+        strlcpy(device_config.name, name, sizeof(device_config.name));
+        ESP_LOGI(TAG, "Device settings: name='%s'", device_config.name);
+        return true;
+    }
+
+    ESP_LOGE(TAG, "\"your_name\" must be a non-empty string of at most %d characters",
+             (int)max_name_length);
+    return false;
+}
+
+/**
  * @brief Apply a configuration document received from the broker.
  *
  * The document must carry a "now" member holding an RFC3339 timestamp, which
  * is used to set the device clock.
  *
  * @param payload Null-terminated configuration document.
- * @return true only if the device clock was set from "now", so the caller can
- *         stop listening for it; false if the payload was rejected.
+ * @return true when the document is valid and device settings were applied;
+ *         false if the payload was rejected.
  */
 bool device_configure_from_mqtt(const char *payload)
 {
@@ -149,8 +174,15 @@ bool device_configure_from_mqtt(const char *payload)
 
     /* Hand the document to the settings store, which keeps the members it
      * recognises so the rest of the firmware can read them back. */
-    device_config_validate(configuration);
-    const bool clock_was_set = device_utils_clock_set(configuration);
+    if (!device_config_validate(configuration))
+    {
+        cJSON_Delete(configuration);
+        return false;
+    }
+
+    /* Time synchronization is useful but is not a prerequisite for accepting
+     * and persisting valid device settings. */
+    (void)device_utils_clock_set(configuration);
     const char *firmware_url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(configuration, "firmware"));
     if (firmware_url && firmware_url[0] != '\0')
     {
@@ -158,5 +190,5 @@ bool device_configure_from_mqtt(const char *payload)
     }
 
     cJSON_Delete(configuration);
-    return clock_was_set;
+    return true;
 }

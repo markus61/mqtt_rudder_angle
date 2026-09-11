@@ -7,6 +7,7 @@ idf_component_register(
     "mqtt_event_handler.c"
     "device_config.c"
     "device_utils.c"
+    "json_utils.c"
     "sensor_config.c"
     "registry_read_write.c"
     "adc/elobau_angle_sensor_config.c"
@@ -22,6 +23,7 @@ idf_component_register(
     REQUIRES
     esp_eth
     espressif__cjson
+    espressif__json_generator
     PRIV_REQUIRES
     esp_adc
     esp_app_format

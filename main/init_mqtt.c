@@ -12,6 +12,8 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "json_generator.h"
+#include "json_utils.h"
 #include "mqtt_client.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
@@ -94,21 +96,34 @@ void mqtt_publish_braindump(void)
     }
 
     char state_json[1024];
-    const int state_length = snprintf(
-        state_json, sizeof(state_json),
-        "{\"now\":\"%s\",\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
-        "\"running_partition_size\":%lu,\"mqtt_connected\":true,\"configured\":%s,"
-        "\"device\":{\"control_topic\":\"%s\"},\"features\":%s}",
-        timestamp, mac_address_string, esp_app_get_description()->version, running_partition_label,
-        running_partition_size, mqtt_event_handler_is_configured() ? "true" : "false",
-        control_topic, features_json);
-    if (state_length < 0 || (size_t)state_length >= sizeof(state_json))
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, state_json, sizeof(state_json), NULL, NULL);
+    if (json_gen_start_object(&generator) != 0 ||
+        !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+        !json_obj_set_escaped_string(&generator, "mac", mac_address_string) ||
+        !json_obj_set_escaped_string(&generator, "app_version", esp_app_get_description()->version) ||
+        !json_obj_set_escaped_string(&generator, "running_partition", running_partition_label) ||
+        json_gen_obj_set_int64(&generator, "running_partition_size", running_partition_size) != 0 ||
+        json_gen_obj_set_bool(&generator, "mqtt_connected", true) != 0 ||
+        json_gen_obj_set_bool(&generator, "configured", mqtt_event_handler_is_configured()) != 0 ||
+        json_gen_push_object(&generator, "device") != 0 ||
+        !json_obj_set_escaped_string(&generator, "control_topic", control_topic) ||
+        json_gen_pop_object(&generator) != 0 ||
+        json_gen_push_array_str(&generator, "features", features_json) != 0 ||
+        json_gen_end_object(&generator) != 0)
     {
         ESP_LOGE(TAG, "Braindump state is too large");
         return;
     }
 
-    if (esp_mqtt_client_publish(mqtt_client, reply_topic, state_json, state_length, 1, 0) < 0)
+    const int state_length = json_gen_str_end(&generator);
+    if (state_length <= 1 || (size_t)state_length > sizeof(state_json))
+    {
+        ESP_LOGE(TAG, "Braindump state is too large");
+        return;
+    }
+
+    if (esp_mqtt_client_publish(mqtt_client, reply_topic, state_json, state_length - 1, 1, 0) < 0)
     {
         ESP_LOGW(TAG, "Failed to publish braindump to '%s'", reply_topic);
     }
@@ -132,9 +147,17 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees)
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
 
     char reading_json[128];
-    snprintf(reading_json, sizeof(reading_json),
-             "{\"now\":\"%s\",\"angle\":%.2f}",
-             timestamp, angle_degrees);
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, reading_json, sizeof(reading_json), NULL, NULL);
+    if (json_gen_start_object(&generator) != 0 ||
+        !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+        json_gen_obj_set_float(&generator, "angle", angle_degrees) != 0 ||
+        json_gen_end_object(&generator) != 0 ||
+        json_gen_str_end(&generator) <= 1)
+    {
+        ESP_LOGW(TAG, "Sensor reading JSON is too large");
+        return false;
+    }
 
     /* Enqueue rather than publish: this runs on the fixed-rate sensor task, so
      * it must not block waiting for the broker to acknowledge. */

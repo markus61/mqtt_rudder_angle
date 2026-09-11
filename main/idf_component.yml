@@ -9,3 +9,6 @@ dependencies:
   # cJSON was a built-in ESP-IDF component up to v5.x; from v6.0 it has to be
   # pulled in from the component registry.
   espressif/cjson: '*'
+  # Allocation-free JSON serialization for MQTT payloads; the local adapter
+  # supplies JSON escaping for externally configured strings.
+  espressif/json_generator: ^1.2.0

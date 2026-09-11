@@ -12,6 +12,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "init_mqtt.h"
+#include "json_generator.h"
+#include "json_utils.h"
 
 static const char *TAG = "angle_sensor";
 
@@ -266,14 +268,33 @@ const char *angle_sensor_config_dump_json(void)
      * leave room for JSON syntax and the decimal representations of the
      * integer settings. */
     static char json[ANGLE_SENSOR_CONFIG_DUMP_JSON_SIZE];
-    const angle_sensor_config_t *config = angle_sensor_config_get();
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, json, sizeof(json), NULL, NULL);
 
-    const int length = snprintf(
-        json, sizeof(json),
-        "{\"type\":\"%s\",\"sensor_pin\":%d,\"sensor_samples_per_reading\":%d,"
-        "\"sensor_sample_period_ms\":%d,\"sensor_topic\":\"%s\"}",
-        config->sensor_type, config->sensor_gpio_number,
-        config->sensor_samples_per_reading, config->sensor_sample_period_ms,
-        config->sensor_topic);
-    return length < 0 || (size_t)length >= sizeof(json) ? NULL : json;
+    if (json_gen_start_object(&generator) != 0 ||
+        !angle_sensor_config_add_json(&generator) ||
+        json_gen_end_object(&generator) != 0)
+    {
+        return NULL;
+    }
+
+    const int length = json_gen_str_end(&generator);
+    return length <= 1 || (size_t)length > sizeof(json) ? NULL : json;
+}
+
+bool angle_sensor_config_add_json(json_gen_str_t *json)
+{
+    if (json == NULL)
+    {
+        return false;
+    }
+
+    const angle_sensor_config_t *config = angle_sensor_config_get();
+    return json_obj_set_escaped_string(json, "type", config->sensor_type) &&
+           json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) == 0 &&
+           json_gen_obj_set_int(json, "sensor_samples_per_reading",
+                                config->sensor_samples_per_reading) == 0 &&
+           json_gen_obj_set_int(json, "sensor_sample_period_ms",
+                                config->sensor_sample_period_ms) == 0 &&
+           json_obj_set_escaped_string(json, "sensor_topic", config->sensor_topic);
 }

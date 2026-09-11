@@ -11,6 +11,8 @@
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "json_generator.h"
+#include "json_utils.h"
 #include "mqtt_client.h"
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
@@ -32,15 +34,15 @@ static bool device_is_configured;
 static volatile bool mqtt_is_connected;
 
 #if SOC_WIFI_SUPPORTED
-#define HARDWARE_HAS_WIFI_JSON "true"
+#define HARDWARE_HAS_WIFI true
 #else
-#define HARDWARE_HAS_WIFI_JSON "false"
+#define HARDWARE_HAS_WIFI false
 #endif
 
 #if SOC_EMAC_SUPPORTED
-#define HARDWARE_HAS_ETHERNET_JSON "true"
+#define HARDWARE_HAS_ETHERNET true
 #else
-#define HARDWARE_HAS_ETHERNET_JSON "false"
+#define HARDWARE_HAS_ETHERNET false
 #endif
 
 static void format_own_mac_address(char *buffer, size_t buffer_size)
@@ -128,13 +130,24 @@ static void publish_config_request(esp_mqtt_client_handle_t client, const char *
     const esp_partition_t *running_partition = esp_ota_get_running_partition();
     const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
-    snprintf(request_json, sizeof(request_json),
-             "{\"mac\":\"%s\",\"app_version\":\"%s\",\"running_partition\":\"%s\","
-             "\"hardware\":{\"chip\":\"%s\",\"running_partition_size\":%lu,"
-             "\"has_wifi\":%s,\"has_ethernet\":%s}}",
-             mac_address_string, esp_app_get_description()->version, running_partition_label,
-             CONFIG_IDF_TARGET, running_partition_size, HARDWARE_HAS_WIFI_JSON,
-             HARDWARE_HAS_ETHERNET_JSON);
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, request_json, sizeof(request_json), NULL, NULL);
+    if (json_gen_start_object(&generator) != 0 ||
+        !json_obj_set_escaped_string(&generator, "mac", mac_address_string) ||
+        !json_obj_set_escaped_string(&generator, "app_version", esp_app_get_description()->version) ||
+        !json_obj_set_escaped_string(&generator, "running_partition", running_partition_label) ||
+        json_gen_push_object(&generator, "hardware") != 0 ||
+        !json_obj_set_escaped_string(&generator, "chip", CONFIG_IDF_TARGET) ||
+        json_gen_obj_set_int64(&generator, "running_partition_size", running_partition_size) != 0 ||
+        json_gen_obj_set_bool(&generator, "has_wifi", HARDWARE_HAS_WIFI) != 0 ||
+        json_gen_obj_set_bool(&generator, "has_ethernet", HARDWARE_HAS_ETHERNET) != 0 ||
+        json_gen_pop_object(&generator) != 0 ||
+        json_gen_end_object(&generator) != 0 ||
+        json_gen_str_end(&generator) <= 1)
+    {
+        ESP_LOGE(TAG, "Configuration request JSON is too large");
+        return;
+    }
     esp_mqtt_client_publish(client, MQTT_CONFIGURE_REQUEST_TOPIC, request_json, 0, 1, 0);
 }
 
@@ -151,9 +164,18 @@ static void publish_configured_state(esp_mqtt_client_handle_t client)
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
 
     char state_json[128];
-    snprintf(state_json, sizeof(state_json),
-             "{\"now\":\"%s\",\"mac\":\"%s\",\"state\":\"configured\"}",
-             timestamp, mac_address_string);
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, state_json, sizeof(state_json), NULL, NULL);
+    if (json_gen_start_object(&generator) != 0 ||
+        !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+        !json_obj_set_escaped_string(&generator, "mac", mac_address_string) ||
+        !json_obj_set_escaped_string(&generator, "state", "configured") ||
+        json_gen_end_object(&generator) != 0 ||
+        json_gen_str_end(&generator) <= 1)
+    {
+        ESP_LOGE(TAG, "Configured state JSON is too large");
+        return;
+    }
     char config_topic[MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE];
     format_config_response_topic(config_topic, sizeof(config_topic));
     esp_mqtt_client_publish(client, config_topic, state_json, 0, 1, 0);

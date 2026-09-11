@@ -5,6 +5,7 @@
 
 #include "cJSON.h"
 #include "esp_err.h"
+#include "json_generator.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -39,6 +40,9 @@ extern "C"
      * @return A JSON object, or NULL if it could not be formatted.
      */
     const char *angle_sensor_config_dump_json(void);
+
+    /** Add the angle sensor's configuration members to an open JSON object. */
+    bool angle_sensor_config_add_json(json_gen_str_t *json);
 
     /** Return the opaque configuration record persisted for this sensor. */
     const void *angle_sensor_config_get(void);

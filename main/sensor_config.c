@@ -4,11 +4,14 @@
  */
 #include "sensor_config.h"
 
+#include <limits.h>
 #include <string.h>
 
 #include "esp_log.h"
 #include "elobau_angle_sensor.h"
+#include "json_utils.h"
 #include "registry_read_write.h"
+#include "json_generator.h"
 
 static const char *TAG = "sensor_config";
 
@@ -36,64 +39,6 @@ static registry_lookup_result_t empty_result(registry_t *lookup)
 static bool valid_text(const char *text)
 {
     return text != NULL && text[0] != '\0';
-}
-
-/* Append a JSON string while preserving enough space for the closing feature
- * and array delimiters.  Registry names originate outside the firmware, so
- * they must not be inserted into a braindump verbatim. */
-static bool append_json_string(char *buffer, size_t buffer_size, size_t *length,
-                               const char *text)
-{
-    static const char hex[] = "0123456789abcdef";
-
-    if (buffer == NULL || length == NULL || text == NULL || *length >= buffer_size ||
-        buffer_size - *length < 2U)
-    {
-        return false;
-    }
-
-    buffer[(*length)++] = '\"';
-    for (const unsigned char *cursor = (const unsigned char *)text; *cursor != '\0';
-         ++cursor)
-    {
-        if (*cursor == '\"' || *cursor == '\\')
-        {
-            if (buffer_size - *length < 2U)
-            {
-                return false;
-            }
-            buffer[(*length)++] = '\\';
-            buffer[(*length)++] = (char)*cursor;
-        }
-        else if (*cursor < 0x20U)
-        {
-            if (buffer_size - *length < 6U)
-            {
-                return false;
-            }
-            buffer[(*length)++] = '\\';
-            buffer[(*length)++] = 'u';
-            buffer[(*length)++] = '0';
-            buffer[(*length)++] = '0';
-            buffer[(*length)++] = hex[*cursor >> 4U];
-            buffer[(*length)++] = hex[*cursor & 0x0fU];
-        }
-        else
-        {
-            if (buffer_size - *length < 1U)
-            {
-                return false;
-            }
-            buffer[(*length)++] = (char)*cursor;
-        }
-    }
-
-    if (buffer_size - *length < 1U)
-    {
-        return false;
-    }
-    buffer[(*length)++] = '\"';
-    return true;
 }
 
 bool sensor_config_lookup_init(registry_t *lookup,
@@ -192,13 +137,17 @@ sensor_config_lookup_by_type(registry_t *lookup, const char *type)
 size_t sensor_json_dump(char *buffer, size_t buffer_size)
 {
     if (buffer == NULL || buffer_size < 3U || active_lookup == NULL ||
-        active_lookup->configurations == NULL)
+        active_lookup->configurations == NULL || buffer_size > INT_MAX)
     {
         return 0U;
     }
 
-    size_t length = 0U;
-    buffer[length++] = '[';
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, buffer, (int)buffer_size, NULL, NULL);
+    if (json_gen_start_array(&generator) != 0)
+    {
+        return 0U;
+    }
 
     for (size_t index = 0U; index < active_lookup->count; ++index)
     {
@@ -209,60 +158,36 @@ size_t sensor_json_dump(char *buffer, size_t buffer_size)
             return 0U;
         }
 
-        if (index != 0U)
+        if (json_gen_start_object(&generator) != 0 ||
+            !json_obj_set_escaped_string(&generator, "name", configuration->name))
         {
-            if (length + 2U > buffer_size)
+            return 0U;
+        }
+
+        if (strcmp(configuration->type, "angle") == 0)
+        {
+            if (!angle_sensor_config_add_json(&generator))
             {
                 return 0U;
             }
-            buffer[length++] = ',';
         }
-
-        /* The sensor formatter provides the type-specific properties.  Prefix
-         * the object with the registry identity so consumers can associate a
-         * feature state with the name used in control messages. */
-        if (length + sizeof("{\"name\":") > buffer_size)
-        {
-            return 0U;
-        }
-        buffer[length++] = '{';
-        memcpy(buffer + length, "\"name\":", sizeof("\"name\":") - 1U);
-        length += sizeof("\"name\":") - 1U;
-        if (!append_json_string(buffer, buffer_size, &length, configuration->name) ||
-            length + 2U > buffer_size)
+        else
         {
             return 0U;
         }
 
-        const char *configuration_json = NULL;
-        if (strcmp(configuration->type, "angle") == 0)
-        {
-            configuration_json = angle_sensor_config_dump_json();
-        }
-
-        if (configuration_json == NULL || configuration_json[0] != '{')
+        if (json_gen_end_object(&generator) != 0)
         {
             return 0U;
         }
-        const size_t configuration_length = strlen(configuration_json);
-        if (configuration_length + 1U > buffer_size - length)
-        {
-            return 0U;
-        }
-        /* The leading brace belongs to the type-specific object; replace it
-         * with the separator needed after the registry name. */
-        buffer[length] = ',';
-        memcpy(buffer + length + 1U, configuration_json + 1U, configuration_length);
-        length += configuration_length;
     }
 
-    if (length + 2U > buffer_size)
+    if (json_gen_end_array(&generator) != 0)
     {
         return 0U;
     }
-    buffer[length++] = ']';
-    buffer[length] = '\0';
-    return length;
+    const int length = json_gen_str_end(&generator);
+    return length <= 1 || (size_t)length > buffer_size ? 0U : (size_t)length - 1U;
 }
 
 esp_err_t registry_init_on_boot(void)

@@ -1,4 +1,6 @@
 #include "elobau_angle_sensor_config.h"
+#include "elobau_angle_sensor.h"
+#include "json_utils.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -122,12 +124,22 @@ bool angle_sensor_configure(const cJSON *configuration)
     return true;
 }
 
-void angle_sensor_config_restore(const angle_sensor_config_t *configuration)
+void angle_sensor_config_restore(const void *configuration)
 {
     if (configuration != NULL)
     {
-        angle_sensor_config = *configuration;
+        memcpy(&angle_sensor_config, configuration, sizeof(angle_sensor_config));
     }
+}
+
+bool angle_sensor_config_add_json(json_gen_str_t *json, const void *configuration)
+{
+    const angle_sensor_config_t *config = configuration;
+    return json != NULL && config != NULL &&
+           json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) == 0 &&
+           json_gen_obj_set_int(json, "sensor_samples_per_reading", config->sensor_samples_per_reading) == 0 &&
+           json_gen_obj_set_int(json, "sensor_sample_period_ms", config->sensor_sample_period_ms) == 0 &&
+           json_obj_set_escaped_string(json, "sensor_topic", config->sensor_topic);
 }
 
 static bool sensor_pin_is_usable(int gpio_number)

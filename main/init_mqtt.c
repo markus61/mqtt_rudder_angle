@@ -81,13 +81,6 @@ void mqtt_publish_braindump(void)
     const char *running_partition_label = running_partition != NULL ? running_partition->label : "";
     const unsigned long running_partition_size = running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
-    char features_json[256];
-    if (registry_features_json_dump(features_json, sizeof(features_json)) == 0U)
-    {
-        ESP_LOGE(TAG, "Braindump feature state is too large");
-        return;
-    }
-
     char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
     if (!format_control_topic(control_topic, sizeof(control_topic)))
     {
@@ -109,7 +102,9 @@ void mqtt_publish_braindump(void)
         json_gen_push_object(&generator, "device") != 0 ||
         !json_obj_set_escaped_string(&generator, "control_topic", control_topic) ||
         json_gen_pop_object(&generator) != 0 ||
-        json_gen_push_array_str(&generator, "features", features_json) != 0 ||
+        json_gen_push_array(&generator, "features") != 0 ||
+        !registry_features_json_add(&generator) ||
+        json_gen_pop_array(&generator) != 0 ||
         json_gen_end_object(&generator) != 0)
     {
         ESP_LOGE(TAG, "Braindump state is too large");

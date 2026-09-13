@@ -23,9 +23,6 @@ extern "C"
         char sensor_type[ANGLE_SENSOR_TYPE_SIZE];
     } angle_sensor_config_t;
 
-    /* Restore a previously validated configuration record from NVS. */
-    void angle_sensor_config_restore(const angle_sensor_config_t *configuration);
-
     /* Overlay the angle-sensor members of a parsed configuration document. */
     void angle_sensor_config_apply_json(const cJSON *configuration);
 

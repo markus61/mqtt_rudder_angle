@@ -1,4 +1,3 @@
-#include "elobau_angle_sensor.h"
 #include "sensor_config.h"
 #include "device_config.h"
 #include "mant1s_ethernet.h"
@@ -79,9 +78,7 @@ void app_main(void)
 
     confirm_ota_image_after_startup();
 
-    /* Start sampling the sensors. */
-
     /* Link and DHCP progress is reported by the event handlers in
-     * mant1s_ethernet.c, and the angle sensor runs on its own task, so there
+     * mant1s_ethernet.c, and attached providers run their own tasks, so there
      * is nothing to poll here. */
 }

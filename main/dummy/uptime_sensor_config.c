@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "uptime_sensor_config.h"
+#include "json_utils.h"
 
 static const char *const UPTIME_SENSOR_TYPES[] = {
     "dummy_uptime",
@@ -28,6 +29,22 @@ const void *uptime_sensor_config_get(void)
 size_t uptime_sensor_config_size(void)
 {
     return sizeof(configuration);
+}
+
+void uptime_sensor_config_restore(const void *record)
+{
+    if (record != NULL)
+    {
+        memcpy(&configuration, record, sizeof(configuration));
+    }
+}
+
+bool uptime_sensor_config_add_json(json_gen_str_t *json, const void *record)
+{
+    const uptime_sensor_config_t *config = record;
+    return json != NULL && config != NULL &&
+           json_gen_obj_set_int(json, "interval", config->interval_seconds) == 0 &&
+           json_obj_set_escaped_string(json, "sensor_topic", config->sensor_topic);
 }
 
 bool uptime_sensor_can_serve_type(const char *type)

@@ -9,6 +9,7 @@
 
 #include "cJSON.h"
 #include "esp_err.h"
+#include "json_generator.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -29,6 +30,12 @@ extern "C"
 
     /** Validate and apply an uptime-sensor configuration action. */
     bool uptime_sensor_configure(const cJSON *configuration);
+
+    /** Restore a trusted record of config_size() bytes; no MQTT validation. */
+    void uptime_sensor_config_restore(const void *configuration);
+
+    /** Append provider settings (excluding name/type) from an opaque snapshot. */
+    bool uptime_sensor_config_add_json(json_gen_str_t *json, const void *configuration);
 
 #ifdef __cplusplus
 }

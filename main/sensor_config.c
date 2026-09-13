@@ -1,178 +1,96 @@
-/**
- * @file sensor_config.c
- * @brief Implementation of sensor configuration management.
- */
+/** Sensor-independent attachment, persistence and dispatch. */
 #include "sensor_config.h"
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "esp_log.h"
 #include "elobau_angle_sensor.h"
-#include "elobau_angle_sensor_config.h"
 #include "uptime_sensor.h"
-#include "uptime_sensor_config.h"
+#include "esp_log.h"
 #include "json_utils.h"
 #include "registry_read_write.h"
-#include "json_generator.h"
 
-static const char *TAG = "sensor_config";
+/* Add a provider's public header above and SENSOR_PROVIDER(prefix) below.
+ * This catalogue describes available code, not attached hardware.
+ * NVS/MQTT supplies attachments. The public APIs expose singleton providers:
+ * one configuration and task per provider, irrespective of supported models. */
+typedef struct
+{
+    bool (*can_serve_type)(const char *type);
+    const void *(*config_get)(void);
+    size_t (*config_size)(void);
+    bool (*configure)(const cJSON *configuration);
+    void (*config_restore)(const void *configuration);
+    esp_err_t (*start)(void);
+    bool (*config_add_json)(json_gen_str_t *json, const void *configuration);
+} sensor_provider_t;
 
-static registry_t *active_lookup;
+#define SENSOR_PROVIDER(prefix) {prefix##_can_serve_type, prefix##_config_get, \
+    prefix##_config_size, prefix##_configure, prefix##_config_restore, \
+    prefix##_start, prefix##_config_add_json}
 
-static feature_entry_t angle_sensor_lookup_config = {
-    .name = "starboard_rudder_angle",
-    .type = "angle",
+static const sensor_provider_t providers[] = {
+    SENSOR_PROVIDER(angle_sensor),
+    SENSOR_PROVIDER(uptime_sensor),
 };
 
-static registry_lookup_result_t empty_result(registry_t *lookup)
+static const char *TAG = "sensor_config";
+static registry_t *active_lookup;
+
+/* Reject ambiguous claims as well as unknown models. */
+static const sensor_provider_t *provider_for_type(const char *type)
 {
-    registry_lookup_result_t result = {
-        .items = lookup != NULL ? lookup->matches : NULL,
-        .count = 0U,
-    };
-    return result;
+    const sensor_provider_t *match = NULL;
+    for (size_t i = 0; i < sizeof(providers) / sizeof(providers[0]); ++i)
+    {
+        if (providers[i].can_serve_type(type))
+        {
+            if (match != NULL)
+            {
+                ESP_LOGE(TAG, "Multiple providers claim type '%s'", type);
+                return NULL;
+            }
+            match = &providers[i];
+        }
+    }
+    return match;
 }
 
-static bool valid_text(const char *text)
+bool registry_features_json_add(json_gen_str_t *generator)
 {
-    return text != NULL && text[0] != '\0';
-}
-
-static bool append_feature_configuration_json(json_gen_str_t *generator,
-                                              const feature_entry_t *feature)
-{
-    if (strcmp(feature->type, "angle") != 0 || feature->configuration == NULL ||
-        feature->configuration_size != sizeof(angle_sensor_config_t))
+    if (generator == NULL)
     {
         return false;
     }
-
-    const angle_sensor_config_t *config = feature->configuration;
-    return json_obj_set_escaped_string(generator, "type", config->sensor_type) &&
-           json_gen_obj_set_int(generator, "sensor_pin", config->sensor_gpio_number) == 0 &&
-           json_gen_obj_set_int(generator, "sensor_samples_per_reading",
-                                config->sensor_samples_per_reading) == 0 &&
-           json_gen_obj_set_int(generator, "sensor_sample_period_ms",
-                                config->sensor_sample_period_ms) == 0 &&
-           json_obj_set_escaped_string(generator, "sensor_topic", config->sensor_topic);
-}
-
-bool registry_feature_add(registry_t *lookup, feature_entry_t *configuration)
-{
-    if (lookup == NULL || lookup->configurations == NULL || lookup->matches == NULL ||
-        configuration == NULL || !valid_text(configuration->name) ||
-        !valid_text(configuration->type) || lookup->count >= lookup->capacity)
+    for (size_t i = 0; active_lookup != NULL && i < active_lookup->count; ++i)
     {
-        return false;
-    }
-
-    for (size_t index = 0U; index < lookup->count; ++index)
-    {
-        if (strcmp(lookup->configurations[index]->name, configuration->name) == 0)
+        const feature_entry_t *entry = active_lookup->configurations[i];
+        const sensor_provider_t *provider = provider_for_type(entry->type);
+        if (provider == NULL || entry->configuration_size != provider->config_size() ||
+            json_gen_start_object(generator) != 0 ||
+            !json_obj_set_escaped_string(generator, "name", entry->name) ||
+            !json_obj_set_escaped_string(generator, "type", entry->type) ||
+            !provider->config_add_json(generator, entry->configuration) ||
+            json_gen_end_object(generator) != 0)
         {
             return false;
         }
     }
-
-    lookup->configurations[lookup->count++] = configuration;
     return true;
-}
-
-registry_lookup_result_t
-sensor_config_lookup_by_name(registry_t *lookup, const char *name)
-{
-    registry_lookup_result_t result = empty_result(lookup);
-    if (lookup == NULL || lookup->configurations == NULL || lookup->matches == NULL ||
-        !valid_text(name))
-    {
-        return result;
-    }
-
-    for (size_t index = 0U; index < lookup->count; ++index)
-    {
-        feature_entry_t *configuration = lookup->configurations[index];
-        if (strcmp(configuration->name, name) == 0)
-        {
-            lookup->matches[0] = configuration;
-            result.items = lookup->matches;
-            result.count = 1U;
-            return result;
-        }
-    }
-
-    return result;
-}
-
-registry_lookup_result_t
-sensor_config_lookup_by_type(registry_t *lookup, const char *type)
-{
-    registry_lookup_result_t result = empty_result(lookup);
-    if (lookup == NULL || lookup->configurations == NULL || lookup->matches == NULL ||
-        !valid_text(type))
-    {
-        return result;
-    }
-
-    for (size_t index = 0U; index < lookup->count; ++index)
-    {
-        feature_entry_t *configuration = lookup->configurations[index];
-        if (strcmp(configuration->type, type) == 0)
-        {
-            if (result.count == lookup->match_capacity)
-            {
-                return empty_result(lookup);
-            }
-            lookup->matches[result.count++] = configuration;
-        }
-    }
-
-    result.items = lookup->matches;
-    return result;
 }
 
 size_t registry_features_json_dump(char *buffer, size_t buffer_size)
 {
-    if (buffer == NULL || buffer_size < 3U || active_lookup == NULL ||
-        active_lookup->configurations == NULL || buffer_size > INT_MAX)
+    if (buffer == NULL || buffer_size < 3U || buffer_size > INT_MAX)
     {
         return 0U;
     }
-
     json_gen_str_t generator;
     json_gen_str_start(&generator, buffer, (int)buffer_size, NULL, NULL);
-    if (json_gen_start_array(&generator) != 0)
-    {
-        return 0U;
-    }
-
-    for (size_t index = 0U; index < active_lookup->count; ++index)
-    {
-        const feature_entry_t *configuration = active_lookup->configurations[index];
-        if (configuration == NULL || !valid_text(configuration->name) ||
-            !valid_text(configuration->type))
-        {
-            return 0U;
-        }
-
-        if (json_gen_start_object(&generator) != 0 ||
-            !json_obj_set_escaped_string(&generator, "name", configuration->name))
-        {
-            return 0U;
-        }
-
-        if (!append_feature_configuration_json(&generator, configuration))
-        {
-            return 0U;
-        }
-
-        if (json_gen_end_object(&generator) != 0)
-        {
-            return 0U;
-        }
-    }
-
-    if (json_gen_end_array(&generator) != 0)
+    if (json_gen_start_array(&generator) != 0 ||
+        !registry_features_json_add(&generator) ||
+        json_gen_end_array(&generator) != 0)
     {
         return 0U;
     }
@@ -182,73 +100,140 @@ size_t registry_features_json_dump(char *buffer, size_t buffer_size)
 
 esp_err_t registry_init_on_boot(void)
 {
+    if (active_lookup != NULL)
+    {
+        return ESP_OK;
+    }
     active_lookup = registry_init();
-    return active_lookup == NULL ? ESP_ERR_INVALID_STATE : ESP_OK;
+    esp_err_t err = registry_read(active_lookup);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    /* Check routing and binary layout for every record before touching any
+     * provider. Persisted settings bypass MQTT validation/configure(). */
+    for (size_t i = 0; i < active_lookup->count; ++i)
+    {
+        const feature_entry_t *entry = active_lookup->configurations[i];
+        const sensor_provider_t *provider = provider_for_type(entry->type);
+        if (provider == NULL || entry->configuration_size != provider->config_size())
+        {
+            ESP_LOGE(TAG, "Cannot restore provider for '%s' (%s)", entry->name, entry->type);
+            registry_clear(active_lookup);
+            return ESP_ERR_INVALID_STATE;
+        }
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (provider_for_type(active_lookup->configurations[j]->type) == provider)
+            {
+                registry_clear(active_lookup);
+                return ESP_ERR_INVALID_STATE;
+            }
+        }
+    }
+
+    esp_err_t result = ESP_OK;
+    for (size_t i = 0; i < active_lookup->count; ++i)
+    {
+        const feature_entry_t *entry = active_lookup->configurations[i];
+        const sensor_provider_t *provider = provider_for_type(entry->type);
+        provider->config_restore(entry->configuration);
+        err = provider->start();
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Could not start '%s': %s", entry->name, esp_err_to_name(err));
+            result = err;
+        }
+    }
+    return result;
 }
 
-registry_t *registry_active_lookup(void)
-{
-    return active_lookup;
-}
-
+/* Called by the MQTT event task after boot; registry mutations are serialized
+ * there. Copy names/types before the caller deletes the cJSON action. */
 esp_err_t sensor_config_from_mqtt(const cJSON *action_json)
 {
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "type"));
     const char *name = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "name"));
-    if (!valid_text(type) || !valid_text(name))
+    if (!cJSON_IsObject(action_json) || type == NULL || type[0] == '\0' ||
+        name == NULL || name[0] == '\0')
     {
-        ESP_LOGW(TAG, "configure_feature requires valid 'name' and 'type' values");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (active_lookup == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const sensor_provider_t *provider = provider_for_type(type);
+    if (provider == NULL)
+    {
+        ESP_LOGW(TAG, "Unsupported or ambiguous sensor type '%s'", type);
         return ESP_ERR_INVALID_ARG;
     }
 
-    feature_entry_t entry = {
-        .name = name,
-        .type = type,
-    };
-
-    if (angle_sensor_can_serve_type(type))
+    size_t index = active_lookup->count;
+    for (size_t i = 0; i < active_lookup->count; ++i)
     {
-        entry.configuration = (void *)angle_sensor_config_get();
-        entry.configuration_size = angle_sensor_config_size();
-        ESP_LOGI(TAG, "Configuring angle sensor for type '%s'", type);
-        if (!angle_sensor_configure(action_json))
+        const feature_entry_t *entry = active_lookup->configurations[i];
+        if (strcmp(entry->name, name) == 0)
         {
-            return ESP_ERR_INVALID_ARG;
+            /* Reconfigure by identity, without repurposing a running provider. */
+            if (strcmp(entry->type, type) != 0)
+            {
+                return ESP_ERR_INVALID_STATE;
+            }
+            index = i;
         }
-        if (angle_sensor_start() != ESP_OK)
+        else if (provider_for_type(entry->type) == provider)
         {
-            ESP_LOGW(TAG, "Failed to start angle sensor, reverting to stored configuration");
-            (void)registry_read(active_lookup);
-            return ESP_ERR_INVALID_STATE;
-        }
-        if (!registry_feature_add(active_lookup, &entry))
-        {
+            ESP_LOGW(TAG, "Provider already attached as '%s'", entry->name);
             return ESP_ERR_INVALID_STATE;
         }
     }
-
-    if (uptime_sensor_can_serve_type(type))
+    const bool adding = index == active_lookup->count;
+    if (adding && active_lookup->count == active_lookup->capacity)
     {
-        entry.configuration = (void *)uptime_sensor_config_get();
-        entry.configuration_size = uptime_sensor_config_size();
-        ESP_LOGI(TAG, "Configuring uptime sensor for type '%s'", type);
-        if (!uptime_sensor_configure(action_json))
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (uptime_sensor_start() != ESP_OK)
-        {
-            ESP_LOGW(TAG, "Failed to start uptime sensor, reverting to stored configuration");
-            (void)registry_read(active_lookup);
-            return ESP_ERR_INVALID_STATE;
-        }
-        if (!registry_feature_add(active_lookup, &entry))
-        {
-            return ESP_ERR_INVALID_STATE;
-        }
+        return ESP_ERR_NO_MEM;
     }
 
-    return registry_write(active_lookup);
+    const size_t size = provider->config_size();
+    feature_entry_t *candidate = registry_entry_create(name, type, provider->config_get(), size);
+    if (candidate == NULL)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    /* Initially the candidate holds a rollback copy of live provider settings. */
+    if (!provider->configure(action_json))
+    {
+        provider->config_restore(candidate->configuration);
+        registry_entry_free(candidate);
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = provider->start();
+    if (err != ESP_OK)
+    {
+        provider->config_restore(candidate->configuration);
+        registry_entry_free(candidate);
+        return err;
+    }
+
+    memcpy(candidate->configuration, provider->config_get(), size);
+    feature_entry_t *previous = adding ? NULL : active_lookup->configurations[index];
+    active_lookup->configurations[index] = candidate;
+    if (adding)
+    {
+        ++active_lookup->count;
+    }
+    registry_entry_free(previous);
+
+    /* A started attachment exists even if NVS fails. Keep it visible so the
+     * same MQTT action can retry persistence; the public API has no stop(). */
+    err = registry_write(active_lookup);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "'%s' is running but not persisted: %s", name, esp_err_to_name(err));
+    }
+    return err;
 }

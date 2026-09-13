@@ -35,8 +35,8 @@ static TaskHandle_t angle_sensor_task_handle;
 
 /* Conversion and publish policy are sensor behaviour, not configuration.
  * The configuration document only supplies wiring, output and sampling. */
-#define SENSOR_MINIMUM_MILLIVOLTS 1452
-#define SENSOR_MAXIMUM_MILLIVOLTS 3100
+#define SENSOR_MINIMUM_MILLIVOLTS 608
+#define SENSOR_MAXIMUM_MILLIVOLTS 3004
 #define SENSOR_MINIMUM_DEGREES 0.0f
 #define SENSOR_MAXIMUM_DEGREES 40.0f
 #define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f

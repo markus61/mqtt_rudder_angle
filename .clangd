@@ -1,2 +1,10 @@
 CompileFlags:
-    Remove: [-f*, -m*]
+  Remove: [-f*, -m*]
+  # esp-clangd's driver query with ESP-IDF's picolibc specs omits GCC's
+  # builtin headers, which provide stdbool.h and stddef.h.
+  Add: [-isystem, /home/markus/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/15.2.0/include]
+
+# ESP-IDF's generated and macro-driven public headers obscure ownership of
+# declarations, producing false unused-include reports in clangd's cleaner.
+Diagnostics:
+  UnusedIncludes: None

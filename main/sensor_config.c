@@ -17,6 +17,8 @@
 typedef struct {
   const char *name;
   bool (*can_serve_type)(const char *type);
+  size_t (*supported_type_count)(void);
+  const char *(*supported_type)(size_t index);
   const void *(*config_get)(void);
   size_t (*config_size)(void);
   bool (*configure)(const cJSON *configuration);
@@ -27,7 +29,8 @@ typedef struct {
 } sensor_provider_t;
 
 #define SENSOR_PROVIDER(prefix)                                                \
-  {#prefix, prefix##_can_serve_type, prefix##_config_get, prefix##_config_size,\
+  {#prefix, prefix##_can_serve_type, prefix##_supported_type_count,           \
+   prefix##_supported_type, prefix##_config_get, prefix##_config_size,         \
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
    prefix##_config_to_json, prefix##_control_action}
 
@@ -35,6 +38,7 @@ static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(angle_sensor),
     SENSOR_PROVIDER(uptime_sensor),
 };
+static bool provider_is_started[sizeof(providers) / sizeof(providers[0])];
 
 static const char *TAG = "sensor_config";
 static registry_t *active_lookup;
@@ -45,6 +49,47 @@ size_t sensor_provider_count(void) {
 
 const char *sensor_provider_name(size_t index) {
   return index < sensor_provider_count() ? providers[index].name : NULL;
+}
+
+static size_t provider_index(const sensor_provider_t *provider) {
+  return (size_t)(provider - providers);
+}
+
+bool sensor_active_providers_json_add(json_gen_str_t *json) {
+  if (json == NULL) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (provider_is_started[i] &&
+        json_gen_arr_set_string(json, providers[i].name) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool sensor_available_providers_json_add(json_gen_str_t *json) {
+  if (json == NULL) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (json_gen_start_object(json) != 0 ||
+        !json_obj_set_escaped_string(json, "name", providers[i].name) ||
+        json_gen_push_array(json, "types") != 0) {
+      return false;
+    }
+    for (size_t type_index = 0;
+         type_index < providers[i].supported_type_count(); ++type_index) {
+      const char *type = providers[i].supported_type(type_index);
+      if (type == NULL || json_gen_arr_set_string(json, type) != 0) {
+        return false;
+      }
+    }
+    if (json_gen_pop_array(json) != 0 || json_gen_end_object(json) != 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool sensor_provider_handle_control(const char *provider_name,
@@ -163,6 +208,7 @@ esp_err_t registry_init_on_boot(void) {
   if (active_lookup != NULL) {
     return ESP_OK;
   }
+  memset(provider_is_started, 0, sizeof(provider_is_started));
   active_lookup = registry_init();
   esp_err_t err = registry_read(active_lookup);
   if (err != ESP_OK) {
@@ -200,6 +246,8 @@ esp_err_t registry_init_on_boot(void) {
       ESP_LOGE(TAG, "Could not start '%s': %s", entry->name,
                esp_err_to_name(err));
       result = err;
+    } else {
+      provider_is_started[provider_index(provider)] = true;
     }
   }
   return result;
@@ -262,6 +310,7 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
     registry_entry_free(candidate);
     return err;
   }
+  provider_is_started[provider_index(provider)] = true;
 
   memcpy(candidate->configuration, provider->config_get(), size);
   feature_entry_t *previous =

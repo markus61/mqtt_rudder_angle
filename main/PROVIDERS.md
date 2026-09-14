@@ -12,6 +12,7 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | Operation | Responsibility |
 | --- | --- |
 | `bool <prefix>_can_serve_type(const char *)` | Recognize exact model strings; return false for NULL/unknown types. Must have no side effects. Multiple providers claiming a model is an error. |
+| `size_t <prefix>_supported_type_count(void)` / `const char *<prefix>_supported_type(size_t)` | Enumerate the exact model strings exposed by the device-level `providers` action. Return NULL for an out-of-range index. |
 | `const void *<prefix>_config_get(void)` | Borrow the live provider-owned plain-data configuration; lifetime is the entire process. Keep sensible defaults in the provider. |
 | `size_t <prefix>_config_size(void)` | Return the fixed configuration record size. Do not persist pointers, task handles or callbacks. |
 | `bool <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration. Do not start a task here. Rejected changes are restored by the registry. |
@@ -63,6 +64,12 @@ A `braindump` reply is symmetric with its request topic. `control/<device>`
 returns device state on `control_reply/<device>`, while
 `control/<device>/<provider>` returns only that provider's attached
 configuration on `control_reply/<device>/<provider>`.
+Device replies include `runtime.active_sensors`, containing the API names of
+providers whose `start()` call succeeded.
+
+The device action `{"action":"providers"}` publishes every compiled-in
+provider and its supported model types to `control_reply/<device>`, regardless
+of its configuration or startup state.
 
 Example uptime action (published to `control/<device_name>/uptime_sensor`):
 

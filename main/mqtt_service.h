@@ -49,6 +49,13 @@ void mqtt_publish_device_braindump(void);
 /** Publish one provider's configuration to its symmetric control-reply topic. */
 void mqtt_publish_provider_braindump(const char *provider_name);
 
+/** Publish a provider-scoped human-readable message on its reply topic. */
+void mqtt_publish_provider_message(const char *provider_name,
+                                   const char *message);
+
+/** Publish all compiled-in providers and their supported types. */
+void mqtt_publish_available_providers(void);
+
 #ifdef __cplusplus
 }
 #endif

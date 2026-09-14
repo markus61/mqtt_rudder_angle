@@ -61,6 +61,16 @@ bool angle_sensor_can_serve_type(const char *type) {
   return false;
 }
 
+size_t angle_sensor_supported_type_count(void) {
+  return sizeof(ANGLE_SENSOR_CONFIG_TYPES) / sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
+}
+
+const char *angle_sensor_supported_type(size_t index) {
+  return index < angle_sensor_supported_type_count()
+             ? ANGLE_SENSOR_CONFIG_TYPES[index]
+             : NULL;
+}
+
 /**
  * @brief Apply the entire angle sensor configuration from the JSON object.
  *

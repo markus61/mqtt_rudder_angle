@@ -43,6 +43,12 @@ size_t angle_sensor_config_size(void);
 /** Return whether this sensor supports the supplied model type. */
 bool angle_sensor_can_serve_type(const char *type);
 
+/** Return the number of model types supported by this provider. */
+size_t angle_sensor_supported_type_count(void);
+
+/** Return a supported model type by index, or NULL when out of range. */
+const char *angle_sensor_supported_type(size_t index);
+
 /**
  * @brief Configure the angle sensor with the given JSON configuration.
  *        Validate and apply an angle-sensor configuration action.

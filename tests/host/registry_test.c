@@ -57,6 +57,9 @@ static bool fail_start;
 #define MOCK_PROVIDER(prefix, index, model) \
     const void *prefix##_config_get(void) { return &values[index]; } \
     size_t prefix##_config_size(void) { return sizeof(int); } \
+    size_t prefix##_supported_type_count(void) { return 1; } \
+    const char *prefix##_supported_type(size_t type_index) { \
+        return type_index == 0 ? model : NULL; } \
     bool prefix##_can_serve_type(const char *type) { \
         return type && (!strcmp(type, model) || !strcmp(type, "ambiguous") || \
             (index == 0 && !strcmp(type, "model-a2"))); } \
@@ -107,6 +110,14 @@ int main(void)
     assert(control_actions[1] == 1);
     assert(!sensor_provider_handle_control("missing", "{}", 2));
     char json[1024];
+    json_gen_str_t catalogue_generator;
+    json_gen_str_start(&catalogue_generator, json, sizeof(json), NULL, NULL);
+    assert(json_gen_start_array(&catalogue_generator) == 0);
+    assert(sensor_available_providers_json_add(&catalogue_generator));
+    assert(json_gen_end_array(&catalogue_generator) == 0);
+    assert(json_gen_str_end(&catalogue_generator) > 1);
+    assert(!strcmp(json, "[{\"name\":\"angle_sensor\",\"types\":[\"model-a\"]},"
+                       "{\"name\":\"uptime_sensor\",\"types\":[\"model-b\"]}]"));
     assert(registry_providers_json_dump(json, sizeof(json)) == 2);
     assert(strcmp(json, "[]") == 0);
     assert(configure("unknown", "missing", 1) == ESP_ERR_INVALID_ARG);
@@ -136,6 +147,14 @@ int main(void)
     assert(cJSON_GetObjectItem(provider_dump, "value")->valueint == 60);
     cJSON_Delete(provider_dump);
     assert(registry_provider_json_dump("missing", json, sizeof(json)) == 0);
+
+    json_gen_str_t active_generator;
+    json_gen_str_start(&active_generator, json, sizeof(json), NULL, NULL);
+    assert(json_gen_start_array(&active_generator) == 0);
+    assert(sensor_active_providers_json_add(&active_generator));
+    assert(json_gen_end_array(&active_generator) == 0);
+    assert(json_gen_str_end(&active_generator) > 1);
+    assert(!strcmp(json, "[\"angle_sensor\",\"uptime_sensor\"]"));
 
     size_t length = registry_providers_json_dump(json, sizeof(json));
     assert(length == strlen(json));

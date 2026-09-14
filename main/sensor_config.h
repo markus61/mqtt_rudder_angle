@@ -58,6 +58,12 @@ const char *sensor_provider_name(size_t index);
 bool sensor_provider_handle_control(const char *provider_name,
                                     const char *payload, int payload_length);
 
+/** Append the names of providers whose start operation succeeded. */
+bool sensor_active_providers_json_add(json_gen_str_t *json);
+
+/** Append all compiled-in providers and their supported model types. */
+bool sensor_available_providers_json_add(json_gen_str_t *json);
+
 #ifdef __cplusplus
 }
 #endif

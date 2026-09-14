@@ -162,6 +162,10 @@ static bool dispatch_device_control(const char *topic, int topic_length,
     {
         mqtt_publish_device_braindump();
     }
+    else if (strcasecmp(action->valuestring, "providers") == 0)
+    {
+        mqtt_publish_available_providers();
+    }
     else
     {
         ESP_LOGW(TAG, "Unknown device control action '%s'", action->valuestring);

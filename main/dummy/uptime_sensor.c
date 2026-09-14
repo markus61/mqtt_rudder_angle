@@ -61,6 +61,12 @@ void uptime_sensor_control_action(const char *payload, int payload_length) {
     }
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     mqtt_publish_provider_braindump("uptime_sensor");
+  } else if (strcasecmp(action->valuestring, "help") == 0) {
+    mqtt_publish_provider_message(
+        "uptime_sensor",
+        "Publishes elapsed device uptime periodically. Start it with a "
+        "configure_feature action using type 'dummy_uptime', a name, an "
+        "interval in seconds, and an optional sensor_topic.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();

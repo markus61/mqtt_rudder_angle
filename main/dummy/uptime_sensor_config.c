@@ -46,6 +46,15 @@ bool uptime_sensor_can_serve_type(const char *type) {
   return false;
 }
 
+size_t uptime_sensor_supported_type_count(void) {
+  return sizeof(UPTIME_SENSOR_TYPES) / sizeof(UPTIME_SENSOR_TYPES[0]);
+}
+
+const char *uptime_sensor_supported_type(size_t index) {
+  return index < uptime_sensor_supported_type_count() ? UPTIME_SENSOR_TYPES[index]
+                                                       : NULL;
+}
+
 bool uptime_sensor_configure(const cJSON *configuration_json) {
   if (configuration_json == NULL ||
       !uptime_sensor_can_serve_type(cJSON_GetStringValue(

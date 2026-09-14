@@ -43,8 +43,11 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees);
 /** Publish elapsed uptime in seconds as a JSON sensor reading. */
 bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds);
 
-/** Publish the current device state when a provider handles a braindump action. */
-void mqtt_publish_braindump(void);
+/** Publish device-specific state to control_reply/<device_name>. */
+void mqtt_publish_device_braindump(void);
+
+/** Publish one provider's configuration to its symmetric control-reply topic. */
+void mqtt_publish_provider_braindump(const char *provider_name);
 
 #ifdef __cplusplus
 }

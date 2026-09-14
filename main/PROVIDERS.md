@@ -59,6 +59,11 @@ The current providers retain the existing `configure_feature`, `braindump`, and
 `reset` actions. A `configure_feature` request must use the matching provider
 topic and a type that provider serves.
 
+A `braindump` reply is symmetric with its request topic. `control/<device>`
+returns device state on `control_reply/<device>`, while
+`control/<device>/<provider>` returns only that provider's attached
+configuration on `control_reply/<device>/<provider>`.
+
 Example uptime action (published to `control/<device_name>/uptime_sensor`):
 
 ```json

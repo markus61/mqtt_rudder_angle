@@ -60,7 +60,7 @@ void uptime_sensor_control_action(const char *payload, int payload_length) {
                esp_err_to_name(err));
     }
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
-    mqtt_publish_braindump();
+    mqtt_publish_provider_braindump("uptime_sensor");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();

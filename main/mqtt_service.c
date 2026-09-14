@@ -70,7 +70,7 @@ static void format_own_mac_address(char *buffer, size_t buffer_size) {
            mac_address[5]);
 }
 
-void mqtt_publish_braindump(void) {
+void mqtt_publish_device_braindump(void) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
     ESP_LOGW(TAG, "Cannot publish braindump while MQTT is disconnected");
     return;
@@ -137,9 +137,6 @@ void mqtt_publish_braindump(void) {
       !json_obj_set_escaped_string(&generator, "control_topic_prefix",
                                    control_topic_prefix) ||
       json_gen_pop_object(&generator) != 0 ||
-      json_gen_push_array(&generator, "features") != 0 ||
-      !registry_providers_json_add(&generator) ||
-      json_gen_pop_array(&generator) != 0 ||
       json_gen_end_object(&generator) != 0) {
     ESP_LOGE(TAG, "Braindump state is too large");
     return;
@@ -154,6 +151,39 @@ void mqtt_publish_braindump(void) {
   if (esp_mqtt_client_publish(mqtt_client, reply_topic, state_json,
                               state_length - 1, 1, 0) < 0) {
     ESP_LOGW(TAG, "Failed to publish braindump to '%s'", reply_topic);
+  }
+}
+
+void mqtt_publish_provider_braindump(const char *provider_name) {
+  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
+    ESP_LOGW(TAG, "Cannot publish provider braindump while MQTT is disconnected");
+    return;
+  }
+  const char *device_name = device_config_get()->name;
+  if (device_name[0] == '\0' || provider_name == NULL || provider_name[0] == '\0') {
+    ESP_LOGW(TAG, "Cannot publish provider braindump without a device and provider name");
+    return;
+  }
+
+  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U];
+  const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
+                                    "control_reply/%s/%s", device_name,
+                                    provider_name);
+  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
+    ESP_LOGE(TAG, "Provider braindump reply topic is too long");
+    return;
+  }
+
+  char configuration_json[1024];
+  const size_t configuration_length = registry_provider_json_dump(
+      provider_name, configuration_json, sizeof(configuration_json));
+  if (configuration_length == 0U) {
+    ESP_LOGE(TAG, "Could not encode configuration for provider '%s'", provider_name);
+    return;
+  }
+  if (esp_mqtt_client_publish(mqtt_client, reply_topic, configuration_json,
+                              (int)configuration_length, 1, 0) < 0) {
+    ESP_LOGW(TAG, "Failed to publish provider braindump to '%s'", reply_topic);
   }
 }
 

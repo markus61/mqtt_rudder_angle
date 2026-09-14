@@ -35,6 +35,10 @@ typedef struct {
  * array. */
 size_t registry_providers_json_dump(char *buffer, size_t buffer_size);
 
+/** Write the registered configuration for one provider as a JSON object. */
+size_t registry_provider_json_dump(const char *provider_name, char *buffer,
+                                  size_t buffer_size);
+
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 

@@ -129,6 +129,14 @@ int main(void)
     assert(values[1] == 60 && writes == before);
     fail_start = false;
 
+    size_t provider_length =
+        registry_provider_json_dump("uptime_sensor", json, sizeof(json));
+    assert(provider_length == strlen(json));
+    cJSON *provider_dump = cJSON_Parse(json);
+    assert(cJSON_GetObjectItem(provider_dump, "value")->valueint == 60);
+    cJSON_Delete(provider_dump);
+    assert(registry_provider_json_dump("missing", json, sizeof(json)) == 0);
+
     size_t length = registry_providers_json_dump(json, sizeof(json));
     assert(length == strlen(json));
     cJSON *dump = cJSON_Parse(json);

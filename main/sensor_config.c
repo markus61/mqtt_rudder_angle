@@ -76,6 +76,18 @@ static const sensor_provider_t *provider_for_type(const char *type) {
   return match;
 }
 
+static const sensor_provider_t *provider_for_name(const char *name) {
+  if (name == NULL) {
+    return NULL;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (strcmp(name, providers[i].name) == 0) {
+      return &providers[i];
+    }
+  }
+  return NULL;
+}
+
 bool registry_providers_json_add(json_gen_str_t *generator) {
   if (generator == NULL) {
     return false;
@@ -109,6 +121,42 @@ size_t registry_providers_json_dump(char *buffer, size_t buffer_size) {
   }
   const int length = json_gen_str_end(&generator);
   return length <= 1 || (size_t)length > buffer_size ? 0U : (size_t)length - 1U;
+}
+
+size_t registry_provider_json_dump(const char *provider_name, char *buffer,
+                                  size_t buffer_size) {
+  const sensor_provider_t *provider = provider_for_name(provider_name);
+  if (provider == NULL || buffer == NULL || buffer_size < 3U ||
+      buffer_size > INT_MAX) {
+    return 0U;
+  }
+
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, buffer, (int)buffer_size, NULL, NULL);
+  if (json_gen_start_object(&generator) != 0) {
+    return 0U;
+  }
+
+  for (size_t i = 0; active_lookup != NULL && i < active_lookup->count; ++i) {
+    const feature_entry_t *entry = active_lookup->configurations[i];
+    if (provider_for_type(entry->type) != provider) {
+      continue;
+    }
+    if (entry->configuration_size != provider->config_size() ||
+        !json_obj_set_escaped_string(&generator, "name", entry->name) ||
+        !json_obj_set_escaped_string(&generator, "type", entry->type) ||
+        !provider->config_to_json(&generator)) {
+      return 0U;
+    }
+    break;
+  }
+
+  if (json_gen_end_object(&generator) != 0) {
+    return 0U;
+  }
+  const int length = json_gen_str_end(&generator);
+  return length <= 1 || (size_t)length > buffer_size ? 0U
+                                                       : (size_t)length - 1U;
 }
 
 esp_err_t registry_init_on_boot(void) {

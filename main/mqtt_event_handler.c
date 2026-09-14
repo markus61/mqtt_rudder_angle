@@ -2,8 +2,10 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
+#include "cJSON.h"
 #include "device_config.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -13,7 +15,9 @@
 #include "json_generator.h"
 #include "json_utils.h"
 #include "mqtt_client.h"
+#include "mqtt_service.h"
 #include "sdkconfig.h"
+#include "sensor_config.h"
 #include "soc/soc_caps.h"
 
 static const char *TAG = "mqtt_event_handler";
@@ -83,6 +87,13 @@ static bool format_provider_control_topic(char *buffer, size_t buffer_size,
            (size_t)length < buffer_size;
 }
 
+static bool format_device_control_topic(char *buffer, size_t buffer_size)
+{
+    const char *device_name = device_config_get()->name;
+    const int length = snprintf(buffer, buffer_size, "control/%s", device_name);
+    return device_name[0] != '\0' && length >= 0 && (size_t)length < buffer_size;
+}
+
 static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
 {
     char config_response_topic[MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE];
@@ -109,6 +120,12 @@ static void subscribe_control_topic(esp_mqtt_client_handle_t client)
         ESP_LOGI(TAG, "No device name configured, not subscribing to control topics");
         return;
     }
+    char device_control_topic[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE];
+    if (format_device_control_topic(device_control_topic, sizeof(device_control_topic)))
+    {
+        ESP_LOGI(TAG, "Subscribing to device control topic '%s'", device_control_topic);
+        esp_mqtt_client_subscribe(client, device_control_topic, 1);
+    }
     for (size_t i = 0; i < sensor_provider_count(); ++i)
     {
         char control_topic[MQTT_PROVIDER_CONTROL_TOPIC_SIZE];
@@ -123,6 +140,34 @@ static void subscribe_control_topic(esp_mqtt_client_handle_t client)
         ESP_LOGI(TAG, "Subscribing to control topic '%s'", control_topic);
         esp_mqtt_client_subscribe(client, control_topic, 1);
     }
+}
+
+static bool dispatch_device_control(const char *topic, int topic_length,
+                                    const char *payload, int payload_length)
+{
+    char device_control_topic[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE];
+    if (!format_device_control_topic(device_control_topic, sizeof(device_control_topic)) ||
+        (size_t)topic_length != strlen(device_control_topic) ||
+        strncmp(topic, device_control_topic, (size_t)topic_length) != 0)
+        return false;
+
+    cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+    const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
+    if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
+        action->valuestring == NULL)
+    {
+        ESP_LOGW(TAG, "Device control payload must contain a string action");
+    }
+    else if (strcasecmp(action->valuestring, "braindump") == 0)
+    {
+        mqtt_publish_device_braindump();
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Unknown device control action '%s'", action->valuestring);
+    }
+    cJSON_Delete(action_json);
+    return true;
 }
 
 static bool dispatch_provider_control(const char *topic, int topic_length,
@@ -275,7 +320,9 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             break;
         }
         default:
-            if (!dispatch_provider_control(event->topic, event->topic_len,
+            if (!dispatch_device_control(event->topic, event->topic_len,
+                                         event->data, event->data_len) &&
+                !dispatch_provider_control(event->topic, event->topic_len,
                                            event->data, event->data_len))
                 ESP_LOGW(TAG, "No handler for topic %.*s", event->topic_len,
                          event->topic);

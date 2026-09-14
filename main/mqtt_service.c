@@ -159,6 +159,52 @@ void mqtt_publish_device_braindump(void) {
   }
 }
 
+void mqtt_publish_device_nvs_write_result(bool success) {
+  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
+    ESP_LOGW(TAG, "Cannot publish NVS write result while MQTT is disconnected");
+    return;
+  }
+  const char *device_name = device_config_get()->name;
+  if (device_name[0] == '\0') {
+    ESP_LOGW(TAG, "Cannot publish NVS write result without a device name");
+    return;
+  }
+  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_TOPIC_SIZE];
+  const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
+                                    "control_reply/%s", device_name);
+  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
+    ESP_LOGE(TAG, "NVS write reply topic is too long");
+    return;
+  }
+
+  time_t current_time = time(NULL);
+  struct tm utc_time = {0};
+  gmtime_r(&current_time, &utc_time);
+  char timestamp[32];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+  char reply_json[96];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, reply_json, sizeof(reply_json), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+      !json_obj_set_escaped_string(&generator, "nvs_write",
+                                   success ? "OK" : "ERROR") ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGE(TAG, "NVS write result is too large");
+    return;
+  }
+  const int reply_length = json_gen_str_end(&generator);
+  if (reply_length <= 1 || (size_t)reply_length > sizeof(reply_json)) {
+    ESP_LOGE(TAG, "NVS write result is too large");
+    return;
+  }
+  if (esp_mqtt_client_publish(mqtt_client, reply_topic, reply_json,
+                              reply_length - 1, 1, 0) < 0) {
+    ESP_LOGW(TAG, "Failed to publish NVS write result to '%s'", reply_topic);
+  }
+}
+
 void mqtt_publish_provider_braindump(const char *provider_name) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
     ESP_LOGW(TAG, "Cannot publish provider braindump while MQTT is disconnected");

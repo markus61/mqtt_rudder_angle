@@ -46,6 +46,9 @@ bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds);
 /** Publish device-specific state to control_reply/<device_name>. */
 void mqtt_publish_device_braindump(void);
 
+/** Publish the result of a device-configuration NVS write. */
+void mqtt_publish_device_nvs_write_result(bool success);
+
 /** Publish one provider's configuration to its symmetric control-reply topic. */
 void mqtt_publish_provider_braindump(const char *provider_name);
 

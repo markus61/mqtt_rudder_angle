@@ -166,6 +166,14 @@ static bool dispatch_device_control(const char *topic, int topic_length,
     {
         mqtt_publish_available_providers();
     }
+    else if (strcasecmp(action->valuestring, "nvs_write") == 0)
+    {
+        const esp_err_t err = device_config_store_to_nvs();
+        mqtt_publish_device_nvs_write_result(err == ESP_OK);
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "Could not store device configuration: %s",
+                     esp_err_to_name(err));
+    }
     else
     {
         ESP_LOGW(TAG, "Unknown device control action '%s'", action->valuestring);

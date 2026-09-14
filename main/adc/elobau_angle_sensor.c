@@ -37,6 +37,13 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
     }
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     mqtt_publish_provider_braindump("angle_sensor");
+  } else if (strcasecmp(action->valuestring, "help") == 0) {
+    mqtt_publish_provider_message(
+        "angle_sensor",
+        "Reads an Elobau angle sensor through the ADC and publishes its "
+        "angle in degrees. Start it with a configure_feature action using a "
+        "supported Elobau type, a name, sensor_pin, sensor_topic, "
+        "sensor_sample_period_ms, and sensor_samples_per_reading.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();

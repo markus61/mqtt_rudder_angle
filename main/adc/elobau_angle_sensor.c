@@ -135,12 +135,12 @@ static void angle_sensor_task(void *task_argument) {
     int millivolts = 0;
     if (read_sensor_millivolts(&millivolts, samples_per_reading)) {
       if (millivolts < config->sensor_minimum_millivolts) {
-        millivolts = config->sensor_minimum_millivolts;
         calibration_min_millivolts = millivolts;
+        millivolts = config->sensor_minimum_millivolts;
       }
       if (millivolts > config->sensor_maximum_millivolts) {
-        millivolts = config->sensor_maximum_millivolts;
         calibration_max_millivolts = millivolts;
+        millivolts = config->sensor_maximum_millivolts;
       }
       const int mv_convert = millivolts - config->sensor_minimum_millivolts;
       last_angle_degrees = (float)mv_convert / mv_per_degree;

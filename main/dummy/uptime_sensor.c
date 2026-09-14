@@ -1,5 +1,6 @@
 #include "uptime_sensor.h"
 
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,13 +28,20 @@ esp_err_t uptime_sensor_start(void) {
   if (uptime_sensor_task_handle != NULL) {
     return ESP_OK;
   }
-
+  ESP_LOGI("uptime_sensor", "Starting uptime sensor task...");
   if (xTaskCreate(uptime_sensor_task, "uptime_sensor", 3072, NULL, 5,
                   &uptime_sensor_task_handle) != pdPASS) {
     return ESP_ERR_NO_MEM;
   }
 
   return ESP_OK;
+}
+
+/** Parse and dispatch an MQTT control-action JSON payload. */
+void uptime_control_action(const char *payload, int payload_length) {
+  (void)payload;
+  (void)payload_length;
+  return;
 }
 
 bool uptime_sensor_config_to_json(json_gen_str_t *json) { return true; }

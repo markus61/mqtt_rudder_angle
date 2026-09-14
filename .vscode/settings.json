@@ -1,7 +1,7 @@
 {
-  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.intelliSenseEngine": "disabled",
   "idf.extensionActivationMode": "always",
-  "idf.buildPath": "${workspaceFolder}/build/.${presetName}",
+  "idf.buildPath": "${workspaceFolder}/build/${presetName}",
   "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig.${presetName}",
   "idf.flashType": "UART",
   "cmake.configureOnOpen": false,

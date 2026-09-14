@@ -5,7 +5,11 @@
       "compilerPath": "/home/markus/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
       "compileCommands": "/home/markus/src/espressif/ManT1S-Angle/build/default/compile_commands.json",
       "includePath": [
-        "${workspaceFolder}/main/**"
+        "${workspaceFolder}/main/**",
+        "${workspaceFolder}/build/default/config",
+        "${workspaceFolder}/managed_components/espressif__cjson/cJSON",
+        "${workspaceFolder}/managed_components/espressif__json_generator/include",
+        "/home/markus/.espressif/v6.1/esp-idf/components/**"
       ],
       "browse": {
         "path": [

@@ -126,6 +126,29 @@ void angle_sensor_config_restore(const void *configuration) {
   }
 }
 
+void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
+                                           int calibration_max_millivolts,
+                                           bool *minimum_replaced,
+                                           bool *maximum_replaced) {
+  const bool replace_minimum =
+      calibration_min_millivolts < angle_sensor_config.sensor_minimum_millivolts;
+  const bool replace_maximum =
+      calibration_max_millivolts > angle_sensor_config.sensor_maximum_millivolts;
+
+  if (replace_minimum) {
+    angle_sensor_config.sensor_minimum_millivolts = calibration_min_millivolts;
+  }
+  if (replace_maximum) {
+    angle_sensor_config.sensor_maximum_millivolts = calibration_max_millivolts;
+  }
+  if (minimum_replaced != NULL) {
+    *minimum_replaced = replace_minimum;
+  }
+  if (maximum_replaced != NULL) {
+    *maximum_replaced = replace_maximum;
+  }
+}
+
 static bool sensor_pin_is_usable(int gpio_number) {
   adc_unit_t adc_unit = ADC_UNIT_1;
   adc_channel_t adc_channel = ADC_CHANNEL_0;

@@ -29,6 +29,13 @@ typedef struct {
 /* Overlay the angle-sensor members of a parsed configuration document. */
 void angle_sensor_config_apply_json(const cJSON *configuration);
 
+/* Expand the configured voltage range to include observed calibration limits.
+ * The replacement flags are set only for bounds that were changed. */
+void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
+                                           int calibration_max_millivolts,
+                                           bool *minimum_replaced,
+                                           bool *maximum_replaced);
+
 #ifdef __cplusplus
 }
 #endif

@@ -279,6 +279,52 @@ void mqtt_publish_provider_message(const char *provider_name,
   }
 }
 
+void mqtt_publish_provider_calibration(const char *provider_name,
+                                       const char *config_value,
+                                       int replacement_value) {
+  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
+    ESP_LOGW(TAG, "Cannot publish calibration while MQTT is disconnected");
+    return;
+  }
+  const char *device_name = device_config_get()->name;
+  if (device_name[0] == '\0' || provider_name == NULL ||
+      provider_name[0] == '\0' || config_value == NULL ||
+      config_value[0] == '\0') {
+    ESP_LOGW(TAG, "Cannot publish calibration without device, provider, and value");
+    return;
+  }
+
+  char control_topic[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U];
+  const int topic_length =
+      snprintf(control_topic, sizeof(control_topic), "control/%s/%s",
+               device_name, provider_name);
+  if (topic_length < 0 || (size_t)topic_length >= sizeof(control_topic)) {
+    ESP_LOGE(TAG, "Provider calibration control topic is too long");
+    return;
+  }
+
+  char calibration_json[128];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, calibration_json, sizeof(calibration_json),
+                     NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "action", "calibration") ||
+      json_gen_obj_set_int(&generator, config_value, replacement_value) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGE(TAG, "Provider calibration message is too large");
+    return;
+  }
+  const int message_length = json_gen_str_end(&generator);
+  if (message_length <= 1 || (size_t)message_length > sizeof(calibration_json)) {
+    ESP_LOGE(TAG, "Provider calibration message is too large");
+    return;
+  }
+  if (esp_mqtt_client_publish(mqtt_client, control_topic, calibration_json,
+                              message_length - 1, 1, 0) < 0) {
+    ESP_LOGW(TAG, "Failed to publish calibration to '%s'", control_topic);
+  }
+}
+
 void mqtt_publish_available_providers(void) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
     ESP_LOGW(TAG, "Cannot publish provider catalogue while MQTT is disconnected");

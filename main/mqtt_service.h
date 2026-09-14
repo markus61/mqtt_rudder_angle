@@ -56,6 +56,11 @@ void mqtt_publish_provider_braindump(const char *provider_name);
 void mqtt_publish_provider_message(const char *provider_name,
                                    const char *message);
 
+/** Publish a provider calibration update on control/<device>/<provider>. */
+void mqtt_publish_provider_calibration(const char *provider_name,
+                                       const char *config_value,
+                                       int replacement_value);
+
 /** Publish all compiled-in providers and their supported types. */
 void mqtt_publish_available_providers(void);
 

@@ -20,6 +20,11 @@
 
 static const char *TAG = "angle_sensor";
 
+/* Observed voltage limits persist for the application's lifetime.  Sentinel
+ * values ensure the first successful reading establishes both limits. */
+static int calibration_min_millivolts = INT_MAX;
+static int calibration_max_millivolts = INT_MIN;
+
 void angle_sensor_control_action(const char *payload, int payload_length) {
   cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
   const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
@@ -35,6 +40,22 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
     if (err != ESP_OK) {
       ESP_LOGW(TAG, "Could not configure provider: %s", esp_err_to_name(err));
     }
+  } else if (strcasecmp(action->valuestring, "calibrate") == 0) {
+    bool minimum_replaced = false;
+    bool maximum_replaced = false;
+    angle_sensor_config_apply_calibration(
+        calibration_min_millivolts, calibration_max_millivolts,
+        &minimum_replaced, &maximum_replaced);
+    if (minimum_replaced) {
+      mqtt_publish_provider_calibration("angle_sensor",
+                                        "sensor_minimum_millivolts",
+                                        calibration_min_millivolts);
+    }
+    if (maximum_replaced) {
+      mqtt_publish_provider_calibration("angle_sensor",
+                                        "sensor_maximum_millivolts",
+                                        calibration_max_millivolts);
+    }
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     mqtt_publish_provider_braindump("angle_sensor");
   } else if (strcasecmp(action->valuestring, "help") == 0) {
@@ -43,7 +64,8 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Start it with a configure_feature action using a "
         "supported Elobau type, a name, sensor_pin, sensor_topic, "
-        "sensor_sample_period_ms, and sensor_samples_per_reading.");
+        "sensor_sample_period_ms, and sensor_samples_per_reading. Use "
+        "calibrate to apply observed voltage limits.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();
@@ -63,10 +85,6 @@ static float last_angle_degrees;
  * reading always exceed the deadband and therefore always publish. */
 static float last_published_angle_degrees = NAN;
 
-/* Observed voltage limits persist for the application's lifetime.  Sentinel
- * values ensure the first successful reading establishes both limits. */
-static int calibration_min_millivolts = INT_MAX;
-static int calibration_max_millivolts = INT_MIN;
 /* INT_MIN means the configured voltage midpoint is still in use. */
 static volatile int centered_reference_millivolts = INT_MIN;
 

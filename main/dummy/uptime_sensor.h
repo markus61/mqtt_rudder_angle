@@ -12,30 +12,29 @@
 #include "json_generator.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
-    /** Start periodic uptime publication using the configured interval. */
-    esp_err_t uptime_sensor_start(void);
+/** Start periodic uptime publication using the configured interval. */
+esp_err_t uptime_sensor_start(void);
 
-    /** Return the opaque configuration record persisted for this provider. */
-    const void *uptime_sensor_config_get(void);
+/** Return the opaque configuration record persisted for this provider. */
+const void *uptime_sensor_config_get(void);
 
-    /** Return the size of the provider's opaque persistent configuration record. */
-    size_t uptime_sensor_config_size(void);
+/** Return the size of the provider's opaque persistent configuration record. */
+size_t uptime_sensor_config_size(void);
 
-    /** Return whether this provider supports the supplied model type. */
-    bool uptime_sensor_can_serve_type(const char *type);
+/** Return whether this provider supports the supplied model type. */
+bool uptime_sensor_can_serve_type(const char *type);
 
-    /** Validate and apply an uptime-sensor configuration action. */
-    bool uptime_sensor_configure(const cJSON *configuration);
+/** Validate and apply an uptime-sensor configuration action. */
+bool uptime_sensor_configure(const cJSON *configuration);
 
-    /** Restore a trusted record of config_size() bytes; no MQTT validation. */
-    void uptime_sensor_config_restore(const void *configuration);
+/** Restore a trusted record of config_size() bytes; no MQTT validation. */
+void uptime_sensor_config_restore(const void *configuration);
 
-    /** Append provider settings (excluding name/type) from an opaque snapshot. */
-    bool uptime_sensor_config_add_json(json_gen_str_t *json, const void *configuration);
+/** Append provider settings (excluding name/type) from an opaque snapshot. */
+bool uptime_sensor_config_to_json(json_gen_str_t *json);
 
 #ifdef __cplusplus
 }

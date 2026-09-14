@@ -21,13 +21,13 @@ typedef struct {
   bool (*configure)(const cJSON *configuration);
   void (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
-  bool (*config_add_json)(json_gen_str_t *json, const void *configuration);
+  bool (*config_to_json)(json_gen_str_t *json);
 } sensor_provider_t;
 
 #define SENSOR_PROVIDER(prefix)                                                \
   {prefix##_can_serve_type, prefix##_config_get,     prefix##_config_size,     \
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
-   prefix##_config_add_json}
+   prefix##_config_to_json}
 
 static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(angle_sensor),
@@ -64,7 +64,7 @@ bool registry_providers_json_add(json_gen_str_t *generator) {
         json_gen_start_object(generator) != 0 ||
         !json_obj_set_escaped_string(generator, "name", entry->name) ||
         !json_obj_set_escaped_string(generator, "type", entry->type) ||
-        !provider->config_add_json(generator, entry->configuration) ||
+        !provider->config_to_json(generator) ||
         json_gen_end_object(generator) != 0) {
       return false;
     }

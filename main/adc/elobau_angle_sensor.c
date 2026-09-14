@@ -1,4 +1,5 @@
 #include "elobau_angle_sensor.h"
+#include "json_utils.h"
 
 #include <limits.h>
 #include <math.h>
@@ -11,7 +12,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "init_mqtt.h"
+#include "mqtt_service.h"
 
 static const char *TAG = "angle_sensor";
 
@@ -26,8 +27,8 @@ static float last_published_angle_degrees = NAN;
 
 /* Observed voltage limits persist for the application's lifetime.  Sentinel
  * values ensure the first successful reading establishes both limits. */
-static int min_millivolts = INT_MAX;
-static int max_millivolts = INT_MIN;
+static int calibration_min_millivolts = INT_MAX;
+static int calibration_max_millivolts = INT_MIN;
 /* INT_MIN means the configured voltage midpoint is still in use. */
 static volatile int centered_reference_millivolts = INT_MIN;
 
@@ -35,15 +36,17 @@ static TaskHandle_t angle_sensor_task_handle;
 
 /* Conversion and publish policy are sensor behaviour, not configuration.
  * The configuration document only supplies wiring, output and sampling. */
-#define SENSOR_MINIMUM_MILLIVOLTS 608
-#define SENSOR_MAXIMUM_MILLIVOLTS 3004
+#define SENSOR_MINIMUM_MILLIVOLTS 1208
+#define SENSOR_MAXIMUM_MILLIVOLTS 3020
 #define SENSOR_MINIMUM_DEGREES 0.0f
 #define SENSOR_MAXIMUM_DEGREES 40.0f
 #define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
-/* Averages a burst of raw readings and converts the result to millivolts. */
+/* Uses a trimmed average of raw readings and converts it to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts,
                                    int samples_per_reading) {
   int raw_total = 0;
+  int lowest_raw_reading = INT_MAX;
+  int highest_raw_reading = INT_MIN;
 
   for (int sample_index = 0; sample_index < samples_per_reading;
        sample_index++) {
@@ -55,9 +58,17 @@ static bool read_sensor_millivolts(int *out_millivolts,
       return false;
     }
     raw_total += raw_reading;
+    if (raw_reading < lowest_raw_reading) {
+      lowest_raw_reading = raw_reading;
+    }
+    if (raw_reading > highest_raw_reading) {
+      highest_raw_reading = raw_reading;
+    }
   }
 
-  const int averaged_raw_reading = raw_total / samples_per_reading;
+  const int averaged_raw_reading =
+      (raw_total - lowest_raw_reading - highest_raw_reading) /
+      (samples_per_reading - 2);
 
   esp_err_t err = adc_cali_raw_to_voltage(adc_calibration_handle,
                                           averaged_raw_reading, out_millivolts);
@@ -69,35 +80,6 @@ static bool read_sensor_millivolts(int *out_millivolts,
   return true;
 }
 
-/* Maps a sensor voltage onto the fixed degree span, clamped to its ends so
- * a sensor that reads slightly outside its nominal range cannot report an
- * impossible deflection. */
-static float convert_millivolts_to_degrees(int millivolts) {
-  const int centered_reference = centered_reference_millivolts;
-  if (centered_reference != INT_MIN) {
-    const int configured_center =
-        SENSOR_MINIMUM_MILLIVOLTS +
-        (SENSOR_MAXIMUM_MILLIVOLTS - SENSOR_MINIMUM_MILLIVOLTS) / 2;
-    millivolts += configured_center - centered_reference;
-  }
-
-  const float voltage_span =
-      (float)(SENSOR_MAXIMUM_MILLIVOLTS - SENSOR_MINIMUM_MILLIVOLTS);
-  const float degree_span = SENSOR_MAXIMUM_DEGREES - SENSOR_MINIMUM_DEGREES;
-
-  const float position_in_span =
-      (float)(millivolts - SENSOR_MINIMUM_MILLIVOLTS) / voltage_span;
-  const float degrees = SENSOR_MINIMUM_DEGREES + position_in_span * degree_span;
-
-  /* The span may be configured in either direction, so clamp against the
-   * lower and higher of the two ends rather than assuming min < max. */
-  const float lower_limit =
-      fminf(SENSOR_MINIMUM_DEGREES, SENSOR_MAXIMUM_DEGREES);
-  const float upper_limit =
-      fmaxf(SENSOR_MINIMUM_DEGREES, SENSOR_MAXIMUM_DEGREES);
-  return fminf(fmaxf(degrees, lower_limit), upper_limit);
-}
-
 static void angle_sensor_task(void *task_argument) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
@@ -105,18 +87,25 @@ static void angle_sensor_task(void *task_argument) {
     /* Re-read the configuration every iteration so a topic that arrives
      * later takes effect without a restart. */
     const angle_sensor_config_t *config = angle_sensor_config_get();
-
+    const int samples_per_reading = config->sensor_samples_per_reading < 3
+                                        ? 3
+                                        : config->sensor_samples_per_reading;
+    const float mv_per_degree =
+        (float)(config->sensor_maximum_millivolts -
+                config->sensor_minimum_millivolts) /
+        (config->sensor_maximum_degrees - config->sensor_minimum_degrees);
     int millivolts = 0;
-    if (read_sensor_millivolts(&millivolts,
-                               config->sensor_samples_per_reading)) {
-      if (millivolts < min_millivolts) {
-        min_millivolts = millivolts;
+    if (read_sensor_millivolts(&millivolts, samples_per_reading)) {
+      if (millivolts < config->sensor_minimum_millivolts) {
+        millivolts = config->sensor_minimum_millivolts;
+        calibration_min_millivolts = millivolts;
       }
-      if (millivolts > max_millivolts) {
-        max_millivolts = millivolts;
+      if (millivolts > config->sensor_maximum_millivolts) {
+        millivolts = config->sensor_maximum_millivolts;
+        calibration_max_millivolts = millivolts;
       }
-
-      last_angle_degrees = convert_millivolts_to_degrees(millivolts);
+      const int mv_convert = millivolts - config->sensor_minimum_millivolts;
+      last_angle_degrees = (float)mv_convert / mv_per_degree;
 
       /* isnan covers the very first reading, where there is nothing to
        * compare against yet. */
@@ -243,4 +232,27 @@ release_adc_unit:
   adc_oneshot_del_unit(adc_unit_handle);
   adc_unit_handle = NULL;
   return err;
+}
+
+bool angle_sensor_config_to_json(json_gen_str_t *json) {
+  const angle_sensor_config_t *config = angle_sensor_config_get();
+  return json != NULL && config != NULL &&
+         json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) ==
+             0 &&
+         json_gen_obj_set_int(json, "sensor_samples_per_reading",
+                              config->sensor_samples_per_reading) == 0 &&
+         json_gen_obj_set_int(json, "sensor_sample_period_ms",
+                              config->sensor_sample_period_ms) == 0 &&
+         json_gen_obj_set_int(json, "sensor_minimum_millivolts",
+                              config->sensor_minimum_millivolts) == 0 &&
+         json_gen_obj_set_int(json, "sensor_maximum_millivolts",
+                              config->sensor_maximum_millivolts) == 0 &&
+         json_gen_obj_set_float(json, "sensor_minimum_degrees",
+                                config->sensor_minimum_degrees) == 0 &&
+         json_gen_obj_set_float(json, "sensor_maximum_degrees",
+                                config->sensor_maximum_degrees) == 0 &&
+         json_gen_obj_set_float(json, "sensor_center_degrees",
+                                config->sensor_center_degrees) == 0 &&
+         json_obj_set_escaped_string(json, "sensor_topic",
+                                     config->sensor_topic);
 }

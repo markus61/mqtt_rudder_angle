@@ -1,8 +1,8 @@
 idf_component_register(
     SRCS
     "main.c"
+    "mqtt_service.c"
     "mant1s_ethernet.c"
-    "init_mqtt.c"
     "handle_control_action.c"
     "mqtt_event_handler.c"
     "device_config.c"

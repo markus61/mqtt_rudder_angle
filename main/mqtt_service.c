@@ -1,4 +1,4 @@
-#include "init_mqtt.h"
+#include "mqtt_service.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +21,7 @@
 #include "mqtt_event_handler.h"
 #include "sensor_config.h"
 
-static const char *TAG = "init_mqtt";
+static const char *TAG = "mqtt_service";
 
 static esp_mqtt_client_handle_t mqtt_client;
 
@@ -53,8 +53,8 @@ static void mqtt_reading_publisher_task(void *task_argument) {
       continue;
     }
 
-    if (esp_mqtt_client_publish(mqtt_client, reading.topic, reading.payload,
-                                0, 0, true) < 0) {
+    if (esp_mqtt_client_publish(mqtt_client, reading.topic, reading.payload, 0,
+                                0, true) < 0) {
       ESP_LOGW(TAG, "Failed to publish latest reading for '%s'", reading.topic);
     }
   }
@@ -249,16 +249,16 @@ esp_err_t init_mqtt(void) {
     return err;
   }
 
-  mqtt_reading_queue = xQueueCreate(MQTT_READING_QUEUE_LENGTH,
-                                    sizeof(mqtt_reading_t));
+  mqtt_reading_queue =
+      xQueueCreate(MQTT_READING_QUEUE_LENGTH, sizeof(mqtt_reading_t));
   if (mqtt_reading_queue == NULL) {
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP,
                                  got_ip_event_handler);
     return ESP_ERR_NO_MEM;
   }
 
-  if (xTaskCreate(mqtt_reading_publisher_task, "mqtt_telemetry", 4096, NULL,
-                  5, NULL) != pdPASS) {
+  if (xTaskCreate(mqtt_reading_publisher_task, "mqtt_telemetry", 4096, NULL, 5,
+                  NULL) != pdPASS) {
     vQueueDelete(mqtt_reading_queue);
     mqtt_reading_queue = NULL;
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP,

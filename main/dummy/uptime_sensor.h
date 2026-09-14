@@ -37,7 +37,7 @@ void uptime_sensor_config_restore(const void *configuration);
 bool uptime_sensor_config_to_json(json_gen_str_t *json);
 
 /** Parse and dispatch an MQTT control-action JSON payload. */
-void uptime_control_action(const char *payload, int payload_length);
+void uptime_sensor_control_action(const char *payload, int payload_length);
 
 #ifdef __cplusplus
 }

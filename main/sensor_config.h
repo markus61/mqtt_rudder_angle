@@ -44,6 +44,16 @@ esp_err_t registry_init_on_boot(void);
 /** Configure a sensor based on an MQTT action JSON object. */
 esp_err_t sensor_config_from_mqtt(const cJSON *action_json);
 
+/** Number of compiled-in providers that expose a control channel. */
+size_t sensor_provider_count(void);
+
+/** Stable name used as the final segment of a provider control topic. */
+const char *sensor_provider_name(size_t index);
+
+/** Deliver a control payload to the provider named by its control topic. */
+bool sensor_provider_handle_control(const char *provider_name,
+                                    const char *payload, int payload_length);
+
 #ifdef __cplusplus
 }
 #endif

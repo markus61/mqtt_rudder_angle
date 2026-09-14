@@ -113,7 +113,7 @@ bool device_config_validate(const cJSON *configuration)
 
     const char *name = cJSON_GetStringValue(name_item);
 
-    const size_t max_name_length = DEVICE_CONFIG_TOPIC_SIZE - sizeof("control/");
+    const size_t max_name_length = DEVICE_CONFIG_NAME_SIZE - 1U;
     if (name != NULL && name[0] != '\0' && strlen(name) <= max_name_length)
     {
         strlcpy(device_config.name, name, sizeof(device_config.name));

@@ -4,17 +4,48 @@
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <strings.h>
 
+#include "cJSON.h"
 #include "elobau_angle_sensor_config.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mqtt_service.h"
+#include "sensor_config.h"
 
 static const char *TAG = "angle_sensor";
+
+void angle_sensor_control_action(const char *payload, int payload_length) {
+  cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+  const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
+  if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
+      action->valuestring == NULL) {
+    ESP_LOGW(TAG, "Control payload must contain a string action");
+  } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
+    const esp_err_t err = angle_sensor_can_serve_type(type)
+                              ? sensor_config_from_mqtt(action_json)
+                              : ESP_ERR_INVALID_ARG;
+    if (err != ESP_OK) {
+      ESP_LOGW(TAG, "Could not configure provider: %s", esp_err_to_name(err));
+    }
+  } else if (strcasecmp(action->valuestring, "braindump") == 0) {
+    mqtt_publish_braindump();
+  } else if (strcasecmp(action->valuestring, "reset") == 0) {
+    cJSON_Delete(action_json);
+    esp_restart();
+    return;
+  } else {
+    ESP_LOGW(TAG, "Unknown control action '%s'", action->valuestring);
+  }
+  cJSON_Delete(action_json);
+}
 
 static adc_oneshot_unit_handle_t adc_unit_handle;
 static adc_cali_handle_t adc_calibration_handle;

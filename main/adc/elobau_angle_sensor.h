@@ -58,6 +58,9 @@ void angle_sensor_config_restore(const void *configuration);
 /** Read provider settings (excluding name/type). */
 bool angle_sensor_config_to_json(json_gen_str_t *json);
 
+/** Handle a control payload received on this provider's MQTT topic. */
+void angle_sensor_control_action(const char *payload, int payload_length);
+
 #ifdef __cplusplus
 }
 #endif

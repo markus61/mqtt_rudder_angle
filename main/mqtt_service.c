@@ -70,14 +70,6 @@ static void format_own_mac_address(char *buffer, size_t buffer_size) {
            mac_address[5]);
 }
 
-/* Control channels are namespaced under "control/"; the persisted setting is
- * only the device name. */
-static bool format_control_topic(char *buffer, size_t buffer_size) {
-  const char *device_name = device_config_get()->name;
-  const int length = snprintf(buffer, buffer_size, "control/%s", device_name);
-  return device_name[0] != '\0' && length >= 0 && (size_t)length < buffer_size;
-}
-
 void mqtt_publish_braindump(void) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
     ESP_LOGW(TAG, "Cannot publish braindump while MQTT is disconnected");
@@ -115,9 +107,14 @@ void mqtt_publish_braindump(void) {
   const unsigned long running_partition_size =
       running_partition != NULL ? (unsigned long)running_partition->size : 0;
 
-  char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
-  if (!format_control_topic(control_topic, sizeof(control_topic))) {
-    ESP_LOGE(TAG, "Could not format braindump control topic");
+  char control_topic_prefix[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE +
+                            sizeof("/")];
+  const int control_topic_prefix_length =
+      snprintf(control_topic_prefix, sizeof(control_topic_prefix), "control/%s/",
+               device_name);
+  if (control_topic_prefix_length < 0 ||
+      (size_t)control_topic_prefix_length >= sizeof(control_topic_prefix)) {
+    ESP_LOGE(TAG, "Could not format provider control topic prefix");
     return;
   }
 
@@ -137,8 +134,8 @@ void mqtt_publish_braindump(void) {
       json_gen_obj_set_bool(&generator, "configured",
                             mqtt_event_handler_is_configured()) != 0 ||
       json_gen_push_object(&generator, "device") != 0 ||
-      !json_obj_set_escaped_string(&generator, "control_topic",
-                                   control_topic) ||
+      !json_obj_set_escaped_string(&generator, "control_topic_prefix",
+                                   control_topic_prefix) ||
       json_gen_pop_object(&generator) != 0 ||
       json_gen_push_array(&generator, "features") != 0 ||
       !registry_providers_json_add(&generator) ||

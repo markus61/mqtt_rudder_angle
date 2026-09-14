@@ -15,6 +15,7 @@
  * NVS/MQTT supplies attachments. The public APIs expose singleton providers:
  * one configuration and task per provider, irrespective of supported models. */
 typedef struct {
+  const char *name;
   bool (*can_serve_type)(const char *type);
   const void *(*config_get)(void);
   size_t (*config_size)(void);
@@ -22,12 +23,13 @@ typedef struct {
   void (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
   bool (*config_to_json)(json_gen_str_t *json);
+  void (*control_action)(const char *payload, int payload_length);
 } sensor_provider_t;
 
 #define SENSOR_PROVIDER(prefix)                                                \
-  {prefix##_can_serve_type, prefix##_config_get,     prefix##_config_size,     \
+  {#prefix, prefix##_can_serve_type, prefix##_config_get, prefix##_config_size,\
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
-   prefix##_config_to_json}
+   prefix##_config_to_json, prefix##_control_action}
 
 static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(angle_sensor),
@@ -36,6 +38,28 @@ static const sensor_provider_t providers[] = {
 
 static const char *TAG = "sensor_config";
 static registry_t *active_lookup;
+
+size_t sensor_provider_count(void) {
+  return sizeof(providers) / sizeof(providers[0]);
+}
+
+const char *sensor_provider_name(size_t index) {
+  return index < sensor_provider_count() ? providers[index].name : NULL;
+}
+
+bool sensor_provider_handle_control(const char *provider_name,
+                                    const char *payload, int payload_length) {
+  if (provider_name == NULL || payload == NULL || payload_length < 0) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (strcmp(provider_name, providers[i].name) == 0) {
+      providers[i].control_action(payload, payload_length);
+      return true;
+    }
+  }
+  return false;
+}
 
 /* Reject ambiguous claims as well as unknown models. */
 static const sensor_provider_t *provider_for_type(const char *type) {

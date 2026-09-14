@@ -5,7 +5,6 @@
 #include <time.h>
 
 #include "device_config.h"
-#include "handle_control_action.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -22,12 +21,13 @@ static const char *TAG = "mqtt_event_handler";
 #define MQTT_CONFIGURE_REQUEST_TOPIC "config_request"
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX "config/"
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE ((sizeof(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX) + 12U))
+#define MQTT_PROVIDER_CONTROL_TOPIC_SIZE \
+    (sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U)
 
 typedef enum
 {
     MQTT_TOPIC_UNKNOWN,
     MQTT_TOPIC_CONFIGURE_RESPONSE,
-    MQTT_TOPIC_CONTROL,
 } mqtt_inbound_topic_t;
 
 static bool device_is_configured;
@@ -72,11 +72,15 @@ static void format_config_response_topic(char *buffer, size_t buffer_size)
     buffer[topic_length] = '\0';
 }
 
-static bool format_control_topic(char *buffer, size_t buffer_size)
+static bool format_provider_control_topic(char *buffer, size_t buffer_size,
+                                          const char *provider_name)
 {
     const char *device_name = device_config_get()->name;
-    const int length = snprintf(buffer, buffer_size, "control/%s", device_name);
-    return device_name[0] != '\0' && length >= 0 && (size_t)length < buffer_size;
+    const int length = snprintf(buffer, buffer_size, "control/%s/%s", device_name,
+                                provider_name);
+    return device_name[0] != '\0' && provider_name != NULL &&
+           provider_name[0] != '\0' && length >= 0 &&
+           (size_t)length < buffer_size;
 }
 
 static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
@@ -86,12 +90,6 @@ static mqtt_inbound_topic_t identify_topic(const char *topic, int topic_length)
     if ((size_t)topic_length == strlen(config_response_topic) &&
         strncmp(topic, config_response_topic, (size_t)topic_length) == 0)
         return MQTT_TOPIC_CONFIGURE_RESPONSE;
-
-    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
-    if (format_control_topic(control_topic, sizeof(control_topic)) &&
-        (size_t)topic_length == strlen(control_topic) &&
-        strncmp(topic, control_topic, (size_t)topic_length) == 0)
-        return MQTT_TOPIC_CONTROL;
 
     return MQTT_TOPIC_UNKNOWN;
 }
@@ -106,14 +104,43 @@ static void subscribe_config_response(esp_mqtt_client_handle_t client)
 
 static void subscribe_control_topic(esp_mqtt_client_handle_t client)
 {
-    char control_topic[DEVICE_CONFIG_TOPIC_SIZE];
-    if (!format_control_topic(control_topic, sizeof(control_topic)))
+    if (device_config_get()->name[0] == '\0')
     {
-        ESP_LOGI(TAG, "No control topic configured, not subscribing");
+        ESP_LOGI(TAG, "No device name configured, not subscribing to control topics");
         return;
     }
-    ESP_LOGI(TAG, "Subscribing to control topic '%s'", control_topic);
-    esp_mqtt_client_subscribe(client, control_topic, 1);
+    for (size_t i = 0; i < sensor_provider_count(); ++i)
+    {
+        char control_topic[MQTT_PROVIDER_CONTROL_TOPIC_SIZE];
+        const char *provider_name = sensor_provider_name(i);
+        if (!format_provider_control_topic(control_topic, sizeof(control_topic),
+                                           provider_name))
+        {
+            ESP_LOGE(TAG, "Could not format control topic for provider '%s'",
+                     provider_name != NULL ? provider_name : "");
+            continue;
+        }
+        ESP_LOGI(TAG, "Subscribing to control topic '%s'", control_topic);
+        esp_mqtt_client_subscribe(client, control_topic, 1);
+    }
+}
+
+static bool dispatch_provider_control(const char *topic, int topic_length,
+                                      const char *payload, int payload_length)
+{
+    for (size_t i = 0; i < sensor_provider_count(); ++i)
+    {
+        char control_topic[MQTT_PROVIDER_CONTROL_TOPIC_SIZE];
+        const char *provider_name = sensor_provider_name(i);
+        if (!format_provider_control_topic(control_topic, sizeof(control_topic),
+                                           provider_name))
+            continue;
+        if ((size_t)topic_length == strlen(control_topic) &&
+            strncmp(topic, control_topic, (size_t)topic_length) == 0)
+            return sensor_provider_handle_control(provider_name, payload,
+                                                  payload_length);
+    }
+    return false;
 }
 
 static void unsubscribe_config_response(esp_mqtt_client_handle_t client)
@@ -247,11 +274,11 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             }
             break;
         }
-        case MQTT_TOPIC_CONTROL:
-            handle_control_action(event->data, event->data_len);
-            break;
         default:
-            ESP_LOGW(TAG, "No handler for topic %.*s", event->topic_len, event->topic);
+            if (!dispatch_provider_control(event->topic, event->topic_len,
+                                           event->data, event->data_len))
+                ESP_LOGW(TAG, "No handler for topic %.*s", event->topic_len,
+                         event->topic);
             break;
         }
         break;

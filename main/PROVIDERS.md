@@ -17,7 +17,8 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | `bool <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration. Do not start a task here. Rejected changes are restored by the registry. |
 | `void <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
 | `esp_err_t <prefix>_start(void)` | Start the configured provider; repeated calls must be safe. Clean up partial startup on failure. |
-| `bool <prefix>_config_add_json(json_gen_str_t *, const void *)` | Append settings from the supplied opaque snapshot to an open JSON object. The registry writes name/type. Escape strings and propagate buffer failures. |
+| `bool <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and propagate buffer failures. |
+| `void <prefix>_control_action(const char *, int)` | Parse and handle MQTT commands for this provider. The payload is not NUL-terminated. |
 
 The registry owns copies of names, model types and configuration snapshots, so
 incoming MQTT JSON can be deleted immediately. The type is the model string
@@ -46,12 +47,19 @@ error is returned; resending the same action retries persistence. The current
 API has no stop operation to undo a successful startup. Provider tasks retain
 responsibility for applying changes to running hardware and their timing.
 
-Boot precedes MQTT; configuration and braindump operations run on the MQTT event
-task. They must remain serialized. Configuration snapshots avoid reading live
+Boot precedes MQTT; provider control operations run on the MQTT event task. They
+must remain serialized. Every compiled-in provider gets its own topic:
+`control/<device_name>/<provider_name>`, where `provider_name` is its API
+prefix (for example `angle_sensor` or `uptime_sensor`). The MQTT layer routes
+only by topic; providers parse their own actions. Configuration snapshots avoid reading live
 provider fields during JSON output, but providers remain responsible for safe
 access to live settings from their own tasks.
 
-Example uptime action (received by the existing control handler):
+The current providers retain the existing `configure_feature`, `braindump`, and
+`reset` actions. A `configure_feature` request must use the matching provider
+topic and a type that provider serves.
+
+Example uptime action (published to `control/<device_name>/uptime_sensor`):
 
 ```json
 {"action":"configure_feature","name":"device_uptime","type":"dummy_uptime","interval":60,"sensor_topic":"sensors/uptime"}

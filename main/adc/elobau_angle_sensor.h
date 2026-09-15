@@ -21,7 +21,7 @@ extern "C" {
  * Reads the pin, sampling configuration and output topic from the angle-sensor
  * configuration, so a configuration document must have supplied a sensor pin
  * first. Each reading is converted to degrees and remembered; a reading that
- * differs from the last published one by the fixed deadband is published to
+ * differs from the last published one by the configured deadband is published to
  * the configured topic.
  *
  * Safe to call more than once: later calls report that sampling is already
@@ -43,6 +43,12 @@ size_t angle_sensor_config_size(void);
 /** Return whether this sensor supports the supplied model type. */
 bool angle_sensor_can_serve_type(const char *type);
 
+/** Return the number of model types supported by this provider. */
+size_t angle_sensor_supported_type_count(void);
+
+/** Return a supported model type by index, or NULL when out of range. */
+const char *angle_sensor_supported_type(size_t index);
+
 /**
  * @brief Configure the angle sensor with the given JSON configuration.
  *        Validate and apply an angle-sensor configuration action.
@@ -57,6 +63,9 @@ void angle_sensor_config_restore(const void *configuration);
 
 /** Read provider settings (excluding name/type). */
 bool angle_sensor_config_to_json(json_gen_str_t *json);
+
+/** Handle a control payload received on this provider's MQTT topic. */
+void angle_sensor_control_action(const char *payload, int payload_length);
 
 #ifdef __cplusplus
 }

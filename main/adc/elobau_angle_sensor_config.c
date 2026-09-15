@@ -18,11 +18,12 @@ static const char *const ANGLE_SENSOR_CONFIG_TYPES[] = {
  * @brief The default configuration for the Elobau angle sensor.
  */
 static angle_sensor_config_t angle_sensor_config = {
-    .sensor_gpio_number = -1,
+    .sensor_gpio_number = 32,
     .sensor_sample_period_ms = 100,
     .sensor_samples_per_reading = 8,
     .sensor_minimum_millivolts = 3300,
     .sensor_maximum_millivolts = 0,
+    .sensor_deadband_millivolt = 5,
     .sensor_topic = "sensors/rudders/starboard",
     .sensor_type = "elobau_424A11A040B",
     .sensor_minimum_degrees = 0.0f,
@@ -61,6 +62,17 @@ bool angle_sensor_can_serve_type(const char *type) {
   return false;
 }
 
+size_t angle_sensor_supported_type_count(void) {
+  return sizeof(ANGLE_SENSOR_CONFIG_TYPES) /
+         sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
+}
+
+const char *angle_sensor_supported_type(size_t index) {
+  return index < angle_sensor_supported_type_count()
+             ? ANGLE_SENSOR_CONFIG_TYPES[index]
+             : NULL;
+}
+
 /**
  * @brief Apply the entire angle sensor configuration from the JSON object.
  *
@@ -87,25 +99,9 @@ bool angle_sensor_configure(const cJSON *configuration) {
   if (!angle_sensor_can_serve_type(type)) {
     return false;
   }
-  /* validate the incoming configuration */
-  const cJSON *sensor_pin =
-      cJSON_GetObjectItemCaseSensitive(configuration, "sensor_pin");
-  const cJSON *sample_period = cJSON_GetObjectItemCaseSensitive(
-      configuration, "sensor_sample_period_ms");
-  const cJSON *samples_per_reading = cJSON_GetObjectItemCaseSensitive(
-      configuration, "sensor_samples_per_reading");
-  const char *topic = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(configuration, "sensor_topic"));
 
-  if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
-      sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
-      samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
-      strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE) {
-    ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
-                  "sensor_sample_period_ms and sensor_samples_per_reading");
-    return false;
-  }
-  /* below this line the configuration is considered valid */
+  /* Sensor settings are an overlay: fields absent from a configuration action
+   * retain their existing (or default) values. */
   apply_configuration(configuration);
   return true;
 }
@@ -113,6 +109,29 @@ bool angle_sensor_configure(const cJSON *configuration) {
 void angle_sensor_config_restore(const void *configuration) {
   if (configuration != NULL) {
     memcpy(&angle_sensor_config, configuration, sizeof(angle_sensor_config));
+  }
+}
+
+void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
+                                           int calibration_max_millivolts,
+                                           bool *minimum_replaced,
+                                           bool *maximum_replaced) {
+  const bool replace_minimum = calibration_min_millivolts <
+                               angle_sensor_config.sensor_minimum_millivolts;
+  const bool replace_maximum = calibration_max_millivolts >
+                               angle_sensor_config.sensor_maximum_millivolts;
+
+  if (replace_minimum) {
+    angle_sensor_config.sensor_minimum_millivolts = calibration_min_millivolts;
+  }
+  if (replace_maximum) {
+    angle_sensor_config.sensor_maximum_millivolts = calibration_max_millivolts;
+  }
+  if (minimum_replaced != NULL) {
+    *minimum_replaced = replace_minimum;
+  }
+  if (maximum_replaced != NULL) {
+    *maximum_replaced = replace_maximum;
   }
 }
 
@@ -249,6 +268,8 @@ void angle_sensor_config_apply_json(const cJSON *configuration) {
                        &angle_sensor_config.sensor_minimum_millivolts);
   apply_integer_member(configuration, "sensor_maximum_millivolts",
                        &angle_sensor_config.sensor_maximum_millivolts);
+  apply_integer_member(configuration, "sensor_deadband_millivolt",
+                       &angle_sensor_config.sensor_deadband_millivolt);
   apply_float_member(configuration, "sensor_minimum_degrees",
                      &angle_sensor_config.sensor_minimum_degrees);
   apply_float_member(configuration, "sensor_maximum_degrees",
@@ -259,9 +280,17 @@ void angle_sensor_config_apply_json(const cJSON *configuration) {
 
   ESP_LOGI(TAG,
            "Angle sensor configuration: pin=%d, sample period=%d ms, "
-           "samples per reading=%d, topic='%s'",
+           "samples per reading=%d, topic='%s', min mV=%d, max mV=%d, "
+           "deadband mV=%d, "
+           "min deg=%.2f, max deg=%.2f, center deg=%.2f",
            angle_sensor_config.sensor_gpio_number,
            angle_sensor_config.sensor_sample_period_ms,
            angle_sensor_config.sensor_samples_per_reading,
-           angle_sensor_config.sensor_topic);
+           angle_sensor_config.sensor_topic,
+           angle_sensor_config.sensor_minimum_millivolts,
+           angle_sensor_config.sensor_maximum_millivolts,
+           angle_sensor_config.sensor_deadband_millivolt,
+           angle_sensor_config.sensor_minimum_degrees,
+           angle_sensor_config.sensor_maximum_degrees,
+           angle_sensor_config.sensor_center_degrees);
 }

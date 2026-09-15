@@ -4,17 +4,86 @@
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <strings.h>
 
+#include "cJSON.h"
 #include "elobau_angle_sensor_config.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mqtt_service.h"
+#include "sensor_config.h"
 
 static const char *TAG = "angle_sensor";
+
+/* Observed voltage limits persist for the application's lifetime.  Sentinel
+ * values ensure the first successful reading establishes both limits. */
+static int calibration_min_millivolts = INT_MAX;
+static int calibration_max_millivolts = INT_MIN;
+
+void angle_sensor_control_action(const char *payload, int payload_length) {
+  cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+  const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
+  if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
+      action->valuestring == NULL) {
+    ESP_LOGW(TAG, "Control payload must contain a string action");
+  } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
+    const char *type = cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
+    const esp_err_t err = angle_sensor_can_serve_type(type)
+                              ? sensor_config_from_mqtt(action_json)
+                              : ESP_ERR_INVALID_ARG;
+    if (err != ESP_OK) {
+      ESP_LOGW(TAG, "Could not configure provider: %s", esp_err_to_name(err));
+    }
+  } else if (strcasecmp(action->valuestring, "calibrate") == 0) {
+    bool minimum_replaced = false;
+    bool maximum_replaced = false;
+    angle_sensor_config_apply_calibration(calibration_min_millivolts,
+                                          calibration_max_millivolts,
+                                          &minimum_replaced, &maximum_replaced);
+    if (minimum_replaced) {
+      mqtt_publish_provider_calibration("angle_sensor",
+                                        "sensor_minimum_millivolts",
+                                        calibration_min_millivolts);
+    }
+    if (maximum_replaced) {
+      mqtt_publish_provider_calibration("angle_sensor",
+                                        "sensor_maximum_millivolts",
+                                        calibration_max_millivolts);
+    }
+  } else if (strcasecmp(action->valuestring, "calibration_check") == 0) {
+    const angle_sensor_config_t *config = angle_sensor_config_get();
+    const bool calibration_required =
+        calibration_min_millivolts < config->sensor_minimum_millivolts ||
+        calibration_max_millivolts > config->sensor_maximum_millivolts;
+    mqtt_publish_provider_calibration_check(
+        "angle_sensor", calibration_required, calibration_min_millivolts,
+        calibration_max_millivolts);
+  } else if (strcasecmp(action->valuestring, "braindump") == 0) {
+    mqtt_publish_provider_braindump("angle_sensor");
+  } else if (strcasecmp(action->valuestring, "help") == 0) {
+    mqtt_publish_provider_message(
+        "angle_sensor",
+        "Reads an Elobau angle sensor through the ADC and publishes its "
+        "angle in degrees. Configure it with a supported Elobau type and a "
+        "name; every sensor_* setting is optional, and omitted settings "
+        "retain their current values. Use "
+        "calibration_check to inspect observed voltage limits, or calibrate "
+        "to apply them.");
+  } else if (strcasecmp(action->valuestring, "reset") == 0) {
+    cJSON_Delete(action_json);
+    esp_restart();
+    return;
+  } else {
+    ESP_LOGW(TAG, "Unknown control action '%s'", action->valuestring);
+  }
+  cJSON_Delete(action_json);
+}
 
 static adc_oneshot_unit_handle_t adc_unit_handle;
 static adc_cali_handle_t adc_calibration_handle;
@@ -23,12 +92,8 @@ static adc_channel_t sensor_adc_channel;
 static float last_angle_degrees;
 /* Angle at the last publish. NAN until the first one, which makes the first
  * reading always exceed the deadband and therefore always publish. */
-static float last_published_angle_degrees = NAN;
+static float last_published_millivolts = NAN;
 
-/* Observed voltage limits persist for the application's lifetime.  Sentinel
- * values ensure the first successful reading establishes both limits. */
-static int calibration_min_millivolts = INT_MAX;
-static int calibration_max_millivolts = INT_MIN;
 /* INT_MIN means the configured voltage midpoint is still in use. */
 static volatile int centered_reference_millivolts = INT_MIN;
 
@@ -40,13 +105,12 @@ static TaskHandle_t angle_sensor_task_handle;
 #define SENSOR_MAXIMUM_MILLIVOLTS 3020
 #define SENSOR_MINIMUM_DEGREES 0.0f
 #define SENSOR_MAXIMUM_DEGREES 40.0f
-#define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
 /* Uses a trimmed average of raw readings and converts it to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts,
                                    int samples_per_reading) {
-  int raw_total = 0;
-  int lowest_raw_reading = INT_MAX;
-  int highest_raw_reading = INT_MIN;
+  int total = 0;
+  int lowest_reading = INT_MAX;
+  int highest_reading = INT_MIN;
 
   for (int sample_index = 0; sample_index < samples_per_reading;
        sample_index++) {
@@ -57,31 +121,31 @@ static bool read_sensor_millivolts(int *out_millivolts,
       ESP_LOGW(TAG, "ADC read failed: %s", esp_err_to_name(err));
       return false;
     }
-    raw_total += raw_reading;
-    if (raw_reading < lowest_raw_reading) {
-      lowest_raw_reading = raw_reading;
+    int millivolts = 0;
+    err = adc_cali_raw_to_voltage(adc_calibration_handle, raw_reading,
+                                  &millivolts);
+    if (err != ESP_OK) {
+      ESP_LOGW(TAG, "ADC calibration failed: %s", esp_err_to_name(err));
     }
-    if (raw_reading > highest_raw_reading) {
-      highest_raw_reading = raw_reading;
+    total += millivolts;
+    if (millivolts < lowest_reading) {
+      lowest_reading = millivolts;
+    }
+    if (millivolts > highest_reading) {
+      highest_reading = millivolts;
     }
   }
 
-  const int averaged_raw_reading =
-      (raw_total - lowest_raw_reading - highest_raw_reading) /
-      (samples_per_reading - 2);
+  const int averaged_millivolts =
+      (total - lowest_reading - highest_reading) / (samples_per_reading - 2);
 
-  esp_err_t err = adc_cali_raw_to_voltage(adc_calibration_handle,
-                                          averaged_raw_reading, out_millivolts);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "ADC calibration failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
+  *out_millivolts = averaged_millivolts;
   return true;
 }
 
 static void angle_sensor_task(void *task_argument) {
   TickType_t last_wake_time = xTaskGetTickCount();
+  float degrees = 0.0;
 
   while (true) {
     /* Re-read the configuration every iteration so a topic that arrives
@@ -96,30 +160,39 @@ static void angle_sensor_task(void *task_argument) {
         (config->sensor_maximum_degrees - config->sensor_minimum_degrees);
     int millivolts = 0;
     if (read_sensor_millivolts(&millivolts, samples_per_reading)) {
+      /* Retain the raw observed range for calibration, independent of the
+       * configured range used to convert this reading into an angle. */
+      if (millivolts < calibration_min_millivolts) {
+        calibration_min_millivolts = millivolts;
+      }
+      if (millivolts > calibration_max_millivolts) {
+        calibration_max_millivolts = millivolts;
+      }
       if (millivolts < config->sensor_minimum_millivolts) {
         millivolts = config->sensor_minimum_millivolts;
-        calibration_min_millivolts = millivolts;
       }
       if (millivolts > config->sensor_maximum_millivolts) {
         millivolts = config->sensor_maximum_millivolts;
-        calibration_max_millivolts = millivolts;
       }
-      const int mv_convert = millivolts - config->sensor_minimum_millivolts;
-      last_angle_degrees = (float)mv_convert / mv_per_degree;
 
       /* isnan covers the very first reading, where there is nothing to
        * compare against yet. */
-      const bool angle_changed =
-          isnan(last_published_angle_degrees) ||
-          fabsf(last_angle_degrees - last_published_angle_degrees) >=
-              SENSOR_PUBLISH_DEADBAND_DEGREES;
+      if ((isnan(last_published_millivolts) ||
+           fabsf(millivolts - last_published_millivolts) >=
+               config->sensor_deadband_millivolt)) {
 
-      if (angle_changed && mqtt_publish_sensor_reading(config->sensor_topic,
-                                                       last_angle_degrees)) {
-        /* Only advance the reference once the reading actually went
-         * out, so a publish refused while the broker is unreachable is
-         * retried on the next sample. */
-        last_published_angle_degrees = last_angle_degrees;
+        const int mv_convert = millivolts - config->sensor_minimum_millivolts;
+        degrees =
+            (float)mv_convert / mv_per_degree - config->sensor_center_degrees;
+
+        if (mqtt_publish_sensor_reading(config->sensor_topic, degrees)) {
+          /* Only advance the reference once the reading actually went
+           * out, so a publish refused while the broker is unreachable is
+           * retried on the next sample. */
+          last_published_millivolts = millivolts;
+        }
+      } else {
+        ESP_LOGD(TAG, "Angle change below deadband, not publishing");
       }
     }
 
@@ -166,8 +239,9 @@ esp_err_t angle_sensor_start(void) {
 
   const angle_sensor_config_t *config = angle_sensor_config_get();
   if (config->sensor_gpio_number < 0) {
-    ESP_LOGI(TAG, "No sensor pin configured yet, not sampling");
-    return ESP_ERR_INVALID_STATE;
+    /* The retained/default configuration does not yet identify a pin. */
+    ESP_LOGI(TAG, "No sensor pin configured yet, provider is idle");
+    return ESP_OK;
   }
 
   /* The pin was validated as an ADC1 pin when the configuration was applied,

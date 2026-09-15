@@ -15,27 +15,96 @@
  * NVS/MQTT supplies attachments. The public APIs expose singleton providers:
  * one configuration and task per provider, irrespective of supported models. */
 typedef struct {
+  const char *name;
   bool (*can_serve_type)(const char *type);
+  size_t (*supported_type_count)(void);
+  const char *(*supported_type)(size_t index);
   const void *(*config_get)(void);
   size_t (*config_size)(void);
   bool (*configure)(const cJSON *configuration);
   void (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
   bool (*config_to_json)(json_gen_str_t *json);
+  void (*control_action)(const char *payload, int payload_length);
 } sensor_provider_t;
 
 #define SENSOR_PROVIDER(prefix)                                                \
-  {prefix##_can_serve_type, prefix##_config_get,     prefix##_config_size,     \
+  {#prefix, prefix##_can_serve_type, prefix##_supported_type_count,           \
+   prefix##_supported_type, prefix##_config_get, prefix##_config_size,         \
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
-   prefix##_config_to_json}
+   prefix##_config_to_json, prefix##_control_action}
 
 static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(angle_sensor),
     SENSOR_PROVIDER(uptime_sensor),
 };
+static bool provider_is_started[sizeof(providers) / sizeof(providers[0])];
 
 static const char *TAG = "sensor_config";
 static registry_t *active_lookup;
+
+size_t sensor_provider_count(void) {
+  return sizeof(providers) / sizeof(providers[0]);
+}
+
+const char *sensor_provider_name(size_t index) {
+  return index < sensor_provider_count() ? providers[index].name : NULL;
+}
+
+static size_t provider_index(const sensor_provider_t *provider) {
+  return (size_t)(provider - providers);
+}
+
+bool sensor_active_providers_json_add(json_gen_str_t *json) {
+  if (json == NULL) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (provider_is_started[i] &&
+        json_gen_arr_set_string(json, providers[i].name) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool sensor_available_providers_json_add(json_gen_str_t *json) {
+  if (json == NULL) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (json_gen_start_object(json) != 0 ||
+        !json_obj_set_escaped_string(json, "name", providers[i].name) ||
+        json_gen_push_array(json, "types") != 0) {
+      return false;
+    }
+    for (size_t type_index = 0;
+         type_index < providers[i].supported_type_count(); ++type_index) {
+      const char *type = providers[i].supported_type(type_index);
+      if (type == NULL || json_gen_arr_set_string(json, type) != 0) {
+        return false;
+      }
+    }
+    if (json_gen_pop_array(json) != 0 || json_gen_end_object(json) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool sensor_provider_handle_control(const char *provider_name,
+                                    const char *payload, int payload_length) {
+  if (provider_name == NULL || payload == NULL || payload_length < 0) {
+    return false;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (strcmp(provider_name, providers[i].name) == 0) {
+      providers[i].control_action(payload, payload_length);
+      return true;
+    }
+  }
+  return false;
+}
 
 /* Reject ambiguous claims as well as unknown models. */
 static const sensor_provider_t *provider_for_type(const char *type) {
@@ -50,6 +119,18 @@ static const sensor_provider_t *provider_for_type(const char *type) {
     }
   }
   return match;
+}
+
+static const sensor_provider_t *provider_for_name(const char *name) {
+  if (name == NULL) {
+    return NULL;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (strcmp(name, providers[i].name) == 0) {
+      return &providers[i];
+    }
+  }
+  return NULL;
 }
 
 bool registry_providers_json_add(json_gen_str_t *generator) {
@@ -87,10 +168,47 @@ size_t registry_providers_json_dump(char *buffer, size_t buffer_size) {
   return length <= 1 || (size_t)length > buffer_size ? 0U : (size_t)length - 1U;
 }
 
+size_t registry_provider_json_dump(const char *provider_name, char *buffer,
+                                  size_t buffer_size) {
+  const sensor_provider_t *provider = provider_for_name(provider_name);
+  if (provider == NULL || buffer == NULL || buffer_size < 3U ||
+      buffer_size > INT_MAX) {
+    return 0U;
+  }
+
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, buffer, (int)buffer_size, NULL, NULL);
+  if (json_gen_start_object(&generator) != 0) {
+    return 0U;
+  }
+
+  for (size_t i = 0; active_lookup != NULL && i < active_lookup->count; ++i) {
+    const feature_entry_t *entry = active_lookup->configurations[i];
+    if (provider_for_type(entry->type) != provider) {
+      continue;
+    }
+    if (entry->configuration_size != provider->config_size() ||
+        !json_obj_set_escaped_string(&generator, "name", entry->name) ||
+        !json_obj_set_escaped_string(&generator, "type", entry->type) ||
+        !provider->config_to_json(&generator)) {
+      return 0U;
+    }
+    break;
+  }
+
+  if (json_gen_end_object(&generator) != 0) {
+    return 0U;
+  }
+  const int length = json_gen_str_end(&generator);
+  return length <= 1 || (size_t)length > buffer_size ? 0U
+                                                       : (size_t)length - 1U;
+}
+
 esp_err_t registry_init_on_boot(void) {
   if (active_lookup != NULL) {
     return ESP_OK;
   }
+  memset(provider_is_started, 0, sizeof(provider_is_started));
   active_lookup = registry_init();
   esp_err_t err = registry_read(active_lookup);
   if (err != ESP_OK) {
@@ -128,6 +246,8 @@ esp_err_t registry_init_on_boot(void) {
       ESP_LOGE(TAG, "Could not start '%s': %s", entry->name,
                esp_err_to_name(err));
       result = err;
+    } else {
+      provider_is_started[provider_index(provider)] = true;
     }
   }
   return result;
@@ -190,6 +310,7 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
     registry_entry_free(candidate);
     return err;
   }
+  provider_is_started[provider_index(provider)] = true;
 
   memcpy(candidate->configuration, provider->config_get(), size);
   feature_entry_t *previous =

@@ -43,8 +43,32 @@ bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees);
 /** Publish elapsed uptime in seconds as a JSON sensor reading. */
 bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds);
 
-/** Publish the current device state in response to a braindump action. */
-void mqtt_publish_braindump(void);
+/** Publish device-specific state to control_reply/<device_name>. */
+void mqtt_publish_device_braindump(void);
+
+/** Publish the result of a device-configuration NVS write. */
+void mqtt_publish_device_nvs_write_result(bool success);
+
+/** Publish one provider's configuration to its symmetric control-reply topic. */
+void mqtt_publish_provider_braindump(const char *provider_name);
+
+/** Publish a provider-scoped human-readable message on its reply topic. */
+void mqtt_publish_provider_message(const char *provider_name,
+                                   const char *message);
+
+/** Publish a provider calibration update on control/<device>/<provider>. */
+void mqtt_publish_provider_calibration(const char *provider_name,
+                                       const char *config_value,
+                                       int replacement_value);
+
+/** Publish observed calibration state on control_reply/<device>/<provider>. */
+void mqtt_publish_provider_calibration_check(const char *provider_name,
+                                             bool calibration_required,
+                                             int calibration_min_value,
+                                             int calibration_max_value);
+
+/** Publish all compiled-in providers and their supported types. */
+void mqtt_publish_available_providers(void);
 
 #ifdef __cplusplus
 }

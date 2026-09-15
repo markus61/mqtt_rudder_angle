@@ -35,6 +35,10 @@ typedef struct {
  * array. */
 size_t registry_providers_json_dump(char *buffer, size_t buffer_size);
 
+/** Write the registered configuration for one provider as a JSON object. */
+size_t registry_provider_json_dump(const char *provider_name, char *buffer,
+                                  size_t buffer_size);
+
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 
@@ -43,6 +47,22 @@ esp_err_t registry_init_on_boot(void);
 
 /** Configure a sensor based on an MQTT action JSON object. */
 esp_err_t sensor_config_from_mqtt(const cJSON *action_json);
+
+/** Number of compiled-in providers that expose a control channel. */
+size_t sensor_provider_count(void);
+
+/** Stable name used as the final segment of a provider control topic. */
+const char *sensor_provider_name(size_t index);
+
+/** Deliver a control payload to the provider named by its control topic. */
+bool sensor_provider_handle_control(const char *provider_name,
+                                    const char *payload, int payload_length);
+
+/** Append the names of providers whose start operation succeeded. */
+bool sensor_active_providers_json_add(json_gen_str_t *json);
+
+/** Append all compiled-in providers and their supported model types. */
+bool sensor_available_providers_json_add(json_gen_str_t *json);
 
 #ifdef __cplusplus
 }

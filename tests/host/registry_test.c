@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "../../main/sensor_config.c"
 #include "nvs.h"
 
@@ -51,11 +52,14 @@ esp_err_t nvs_commit(nvs_handle_t handle)
 void nvs_close(nvs_handle_t handle) { }
 
 /* A second model shares provider A's singleton. Both may claim "ambiguous". */
-static int values[2], validations[2], restores[2], starts[2];
+static int values[2], validations[2], restores[2], starts[2], control_actions[2];
 static bool fail_start;
 #define MOCK_PROVIDER(prefix, index, model) \
     const void *prefix##_config_get(void) { return &values[index]; } \
     size_t prefix##_config_size(void) { return sizeof(int); } \
+    size_t prefix##_supported_type_count(void) { return 1; } \
+    const char *prefix##_supported_type(size_t type_index) { \
+        return type_index == 0 ? model : NULL; } \
     bool prefix##_can_serve_type(const char *type) { \
         return type && (!strcmp(type, model) || !strcmp(type, "ambiguous") || \
             (index == 0 && !strcmp(type, "model-a2"))); } \
@@ -68,8 +72,10 @@ static bool fail_start;
     void prefix##_config_restore(const void *record) { \
         ++restores[index]; memcpy(&values[index], record, sizeof(int)); } \
     esp_err_t prefix##_start(void) { ++starts[index]; return fail_start ? ESP_FAIL : ESP_OK; } \
-    bool prefix##_config_add_json(json_gen_str_t *json, const void *record) { \
-        return json_gen_obj_set_int(json, "value", *(const int *)record) == 0; }
+    void prefix##_control_action(const char *payload, int payload_length) { \
+        (void)payload; (void)payload_length; ++control_actions[index]; } \
+    bool prefix##_config_to_json(json_gen_str_t *json) { \
+        return json_gen_obj_set_int(json, "value", values[index]) == 0; }
 MOCK_PROVIDER(angle_sensor, 0, "model-a")
 MOCK_PROVIDER(uptime_sensor, 1, "model-b")
 
@@ -98,8 +104,21 @@ int main(void)
 {
     assert(registry_init_on_boot() == ESP_ERR_NVS_NOT_FOUND);
     assert(active_lookup->count == 0 && starts[0] == 0 && starts[1] == 0);
+    assert(sensor_provider_count() == 2);
+    assert(!strcmp(sensor_provider_name(0), "angle_sensor"));
+    assert(sensor_provider_handle_control("uptime_sensor", "{}", 2));
+    assert(control_actions[1] == 1);
+    assert(!sensor_provider_handle_control("missing", "{}", 2));
     char json[1024];
-    assert(registry_features_json_dump(json, sizeof(json)) == 2);
+    json_gen_str_t catalogue_generator;
+    json_gen_str_start(&catalogue_generator, json, sizeof(json), NULL, NULL);
+    assert(json_gen_start_array(&catalogue_generator) == 0);
+    assert(sensor_available_providers_json_add(&catalogue_generator));
+    assert(json_gen_end_array(&catalogue_generator) == 0);
+    assert(json_gen_str_end(&catalogue_generator) > 1);
+    assert(!strcmp(json, "[{\"name\":\"angle_sensor\",\"types\":[\"model-a\"]},"
+                       "{\"name\":\"uptime_sensor\",\"types\":[\"model-b\"]}]"));
+    assert(registry_providers_json_dump(json, sizeof(json)) == 2);
     assert(strcmp(json, "[]") == 0);
     assert(configure("unknown", "missing", 1) == ESP_ERR_INVALID_ARG);
     assert(configure("unknown", "ambiguous", 1) == ESP_ERR_INVALID_ARG);
@@ -121,7 +140,23 @@ int main(void)
     assert(values[1] == 60 && writes == before);
     fail_start = false;
 
-    size_t length = registry_features_json_dump(json, sizeof(json));
+    size_t provider_length =
+        registry_provider_json_dump("uptime_sensor", json, sizeof(json));
+    assert(provider_length == strlen(json));
+    cJSON *provider_dump = cJSON_Parse(json);
+    assert(cJSON_GetObjectItem(provider_dump, "value")->valueint == 60);
+    cJSON_Delete(provider_dump);
+    assert(registry_provider_json_dump("missing", json, sizeof(json)) == 0);
+
+    json_gen_str_t active_generator;
+    json_gen_str_start(&active_generator, json, sizeof(json), NULL, NULL);
+    assert(json_gen_start_array(&active_generator) == 0);
+    assert(sensor_active_providers_json_add(&active_generator));
+    assert(json_gen_end_array(&active_generator) == 0);
+    assert(json_gen_str_end(&active_generator) > 1);
+    assert(!strcmp(json, "[\"angle_sensor\",\"uptime_sensor\"]"));
+
+    size_t length = registry_providers_json_dump(json, sizeof(json));
     assert(length == strlen(json));
     cJSON *dump = cJSON_Parse(json);
     assert(cJSON_GetArraySize(dump) == 2);
@@ -129,14 +164,14 @@ int main(void)
                    "rudder\"\\\n"));
     assert(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 1), "value")->valueint == 60);
     cJSON_Delete(dump);
-    assert(registry_features_json_dump(json, length + 1) == length);
-    assert(registry_features_json_dump(json, length) == 0);
+    assert(registry_providers_json_dump(json, length + 1) == length);
+    assert(registry_providers_json_dump(json, length) == 0);
 
     json_gen_str_t generator;
     json_gen_str_start(&generator, json, sizeof(json), NULL, NULL);
     assert(json_gen_start_object(&generator) == 0);
     assert(json_gen_push_array(&generator, "features") == 0);
-    assert(registry_features_json_add(&generator));
+    assert(registry_providers_json_add(&generator));
     assert(json_gen_pop_array(&generator) == 0);
     assert(json_gen_end_object(&generator) == 0);
     assert(json_gen_str_end(&generator) > 1);

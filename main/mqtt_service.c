@@ -110,8 +110,8 @@ void mqtt_publish_device_braindump(void) {
   char control_topic_prefix[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE +
                             sizeof("/")];
   const int control_topic_prefix_length =
-      snprintf(control_topic_prefix, sizeof(control_topic_prefix), "control/%s/",
-               device_name);
+      snprintf(control_topic_prefix, sizeof(control_topic_prefix),
+               "control/%s/", device_name);
   if (control_topic_prefix_length < 0 ||
       (size_t)control_topic_prefix_length >= sizeof(control_topic_prefix)) {
     ESP_LOGE(TAG, "Could not format provider control topic prefix");
@@ -207,19 +207,24 @@ void mqtt_publish_device_nvs_write_result(bool success) {
 
 void mqtt_publish_provider_braindump(const char *provider_name) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG, "Cannot publish provider braindump while MQTT is disconnected");
+    ESP_LOGW(TAG,
+             "Cannot publish provider braindump while MQTT is disconnected");
     return;
   }
   const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL || provider_name[0] == '\0') {
-    ESP_LOGW(TAG, "Cannot publish provider braindump without a device and provider name");
+  if (device_name[0] == '\0' || provider_name == NULL ||
+      provider_name[0] == '\0') {
+    ESP_LOGW(
+        TAG,
+        "Cannot publish provider braindump without a device and provider name");
     return;
   }
 
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U];
-  const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
-                                    "control_reply/%s/%s", device_name,
-                                    provider_name);
+  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
+                   32U];
+  const int topic_length =
+      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
+               device_name, provider_name);
   if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
     ESP_LOGE(TAG, "Provider braindump reply topic is too long");
     return;
@@ -229,7 +234,8 @@ void mqtt_publish_provider_braindump(const char *provider_name) {
   const size_t configuration_length = registry_provider_json_dump(
       provider_name, configuration_json, sizeof(configuration_json));
   if (configuration_length == 0U) {
-    ESP_LOGE(TAG, "Could not encode configuration for provider '%s'", provider_name);
+    ESP_LOGE(TAG, "Could not encode configuration for provider '%s'",
+             provider_name);
     return;
   }
   if (esp_mqtt_client_publish(mqtt_client, reply_topic, configuration_json,
@@ -245,15 +251,18 @@ void mqtt_publish_provider_message(const char *provider_name,
     return;
   }
   const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL || provider_name[0] == '\0' ||
-      message == NULL) {
-    ESP_LOGW(TAG, "Cannot publish provider message without device, provider, and text");
+  if (device_name[0] == '\0' || provider_name == NULL ||
+      provider_name[0] == '\0' || message == NULL) {
+    ESP_LOGW(
+        TAG,
+        "Cannot publish provider message without device, provider, and text");
     return;
   }
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U];
-  const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
-                                    "control_reply/%s/%s", device_name,
-                                    provider_name);
+  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
+                   32U];
+  const int topic_length =
+      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
+               device_name, provider_name);
   if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
     ESP_LOGE(TAG, "Provider message reply topic is too long");
     return;
@@ -290,7 +299,8 @@ void mqtt_publish_provider_calibration(const char *provider_name,
   if (device_name[0] == '\0' || provider_name == NULL ||
       provider_name[0] == '\0' || config_value == NULL ||
       config_value[0] == '\0') {
-    ESP_LOGW(TAG, "Cannot publish calibration without device, provider, and value");
+    ESP_LOGW(TAG,
+             "Cannot publish calibration without device, provider, and value");
     return;
   }
 
@@ -315,7 +325,8 @@ void mqtt_publish_provider_calibration(const char *provider_name,
     return;
   }
   const int message_length = json_gen_str_end(&generator);
-  if (message_length <= 1 || (size_t)message_length > sizeof(calibration_json)) {
+  if (message_length <= 1 ||
+      (size_t)message_length > sizeof(calibration_json)) {
     ESP_LOGE(TAG, "Provider calibration message is too large");
     return;
   }
@@ -330,13 +341,15 @@ void mqtt_publish_provider_calibration_check(const char *provider_name,
                                              int calibration_min_value,
                                              int calibration_max_value) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG, "Cannot publish calibration check while MQTT is disconnected");
+    ESP_LOGW(TAG,
+             "Cannot publish calibration check while MQTT is disconnected");
     return;
   }
   const char *device_name = device_config_get()->name;
   if (device_name[0] == '\0' || provider_name == NULL ||
       provider_name[0] == '\0') {
-    ESP_LOGW(TAG, "Cannot publish calibration check without device and provider");
+    ESP_LOGW(TAG,
+             "Cannot publish calibration check without device and provider");
     return;
   }
 
@@ -377,7 +390,8 @@ void mqtt_publish_provider_calibration_check(const char *provider_name,
 
 void mqtt_publish_available_providers(void) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG, "Cannot publish provider catalogue while MQTT is disconnected");
+    ESP_LOGW(TAG,
+             "Cannot publish provider catalogue while MQTT is disconnected");
     return;
   }
   const char *device_name = device_config_get()->name;
@@ -400,12 +414,14 @@ void mqtt_publish_available_providers(void) {
   if (json_gen_start_object(&generator) != 0 ||
       json_gen_push_array(&generator, "providers") != 0 ||
       !sensor_available_providers_json_add(&generator) ||
-      json_gen_pop_array(&generator) != 0 || json_gen_end_object(&generator) != 0) {
+      json_gen_pop_array(&generator) != 0 ||
+      json_gen_end_object(&generator) != 0) {
     ESP_LOGE(TAG, "Provider catalogue is too large");
     return;
   }
   const int catalogue_length = json_gen_str_end(&generator);
-  if (catalogue_length <= 1 || (size_t)catalogue_length > sizeof(catalogue_json)) {
+  if (catalogue_length <= 1 ||
+      (size_t)catalogue_length > sizeof(catalogue_json)) {
     ESP_LOGE(TAG, "Provider catalogue is too large");
     return;
   }
@@ -415,8 +431,8 @@ void mqtt_publish_available_providers(void) {
   }
 }
 
-static bool mqtt_publish_reading(const char *topic, const char *value_name,
-                                 float value) {
+bool mqtt_publish_reading(const char *topic, const char *value_name,
+                          float value) {
   if (mqtt_reading_queue == NULL || mqtt_client == NULL ||
       !mqtt_event_handler_is_connected()) {
     return false;
@@ -456,14 +472,6 @@ static bool mqtt_publish_reading(const char *topic, const char *value_name,
   }
 
   return true;
-}
-
-bool mqtt_publish_sensor_reading(const char *topic, float angle_degrees) {
-  return mqtt_publish_reading(topic, "angle", angle_degrees);
-}
-
-bool mqtt_publish_uptime_reading(const char *topic, float uptime_seconds) {
-  return mqtt_publish_reading(topic, "uptime", uptime_seconds);
 }
 
 /* The MQTT broker lives on the gateway handed out by DHCP, so the client can

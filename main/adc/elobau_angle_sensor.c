@@ -25,6 +25,10 @@ static const char *TAG = "angle_sensor";
 static int calibration_min_millivolts = INT_MAX;
 static int calibration_max_millivolts = INT_MIN;
 
+static bool publish_angle_reading(const char *topic, float angle_degrees) {
+  return mqtt_publish_reading(topic, "angle", angle_degrees);
+}
+
 void angle_sensor_control_action(const char *payload, int payload_length) {
   cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
   const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
@@ -182,10 +186,12 @@ static void angle_sensor_task(void *task_argument) {
                config->sensor_deadband_millivolt)) {
 
         const int mv_convert = millivolts - config->sensor_minimum_millivolts;
-        degrees =
-            (float)mv_convert / mv_per_degree - config->sensor_center_degrees;
+        degrees = roundf(((float)mv_convert / mv_per_degree -
+                          config->sensor_center_degrees) *
+                         10.0f) *
+                  0.1f;
 
-        if (mqtt_publish_sensor_reading(config->sensor_topic, degrees)) {
+        if (publish_angle_reading(config->sensor_topic, degrees)) {
           /* Only advance the reference once the reading actually went
            * out, so a publish refused while the broker is unreachable is
            * retried on the next sample. */
@@ -295,7 +301,7 @@ esp_err_t angle_sensor_start(void) {
            config->sensor_gpio_number, 1000 / config->sensor_sample_period_ms,
            config->sensor_topic);
 
-  mqtt_publish_sensor_reading(config->sensor_topic, last_angle_degrees);
+  publish_angle_reading(config->sensor_topic, last_angle_degrees);
 
   return ESP_OK;
 

@@ -14,14 +14,17 @@
 
 static TaskHandle_t uptime_sensor_task_handle;
 
+static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
+  return mqtt_publish_reading(topic, "uptime", uptime_seconds);
+}
+
 static void uptime_sensor_task(void *task_argument) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   while (true) {
     const uptime_sensor_config_t *configuration = uptime_sensor_config();
     const float uptime_seconds = (float)esp_timer_get_time() / 1000000.0f;
-    (void)mqtt_publish_uptime_reading(configuration->sensor_topic,
-                                      uptime_seconds);
+    (void)publish_uptime_reading(configuration->sensor_topic, uptime_seconds);
 
     vTaskDelayUntil(
         &last_wake_time,

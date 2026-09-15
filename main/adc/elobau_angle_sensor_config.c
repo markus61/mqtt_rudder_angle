@@ -18,7 +18,7 @@ static const char *const ANGLE_SENSOR_CONFIG_TYPES[] = {
  * @brief The default configuration for the Elobau angle sensor.
  */
 static angle_sensor_config_t angle_sensor_config = {
-    .sensor_gpio_number = -1,
+    .sensor_gpio_number = 32,
     .sensor_sample_period_ms = 100,
     .sensor_samples_per_reading = 8,
     .sensor_minimum_millivolts = 3300,
@@ -62,7 +62,8 @@ bool angle_sensor_can_serve_type(const char *type) {
 }
 
 size_t angle_sensor_supported_type_count(void) {
-  return sizeof(ANGLE_SENSOR_CONFIG_TYPES) / sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
+  return sizeof(ANGLE_SENSOR_CONFIG_TYPES) /
+         sizeof(ANGLE_SENSOR_CONFIG_TYPES[0]);
 }
 
 const char *angle_sensor_supported_type(size_t index) {
@@ -97,25 +98,10 @@ bool angle_sensor_configure(const cJSON *configuration) {
   if (!angle_sensor_can_serve_type(type)) {
     return false;
   }
-  /* validate the incoming configuration */
-  const cJSON *sensor_pin =
-      cJSON_GetObjectItemCaseSensitive(configuration, "sensor_pin");
-  const cJSON *sample_period = cJSON_GetObjectItemCaseSensitive(
-      configuration, "sensor_sample_period_ms");
-  const cJSON *samples_per_reading = cJSON_GetObjectItemCaseSensitive(
-      configuration, "sensor_samples_per_reading");
-  const char *topic = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(configuration, "sensor_topic"));
 
-  if (!cJSON_IsNumber(sensor_pin) || !cJSON_IsNumber(sample_period) ||
-      sample_period->valueint <= 0 || !cJSON_IsNumber(samples_per_reading) ||
-      samples_per_reading->valueint <= 0 || topic == NULL || topic[0] == '\0' ||
-      strlen(topic) >= ANGLE_SENSOR_CONFIG_TOPIC_SIZE) {
-    ESP_LOGW(TAG, "configure_sensor requires sensor_pin, sensor_topic, "
-                  "sensor_sample_period_ms and sensor_samples_per_reading");
-    return false;
-  }
-  /* below this line the configuration is considered valid */
+  /* Sensor settings are an overlay.  A model-only configuration is useful
+   * while wiring/calibration details are still unknown; omitted members keep
+   * their existing (or default) values. */
   apply_configuration(configuration);
   return true;
 }
@@ -130,10 +116,10 @@ void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
                                            int calibration_max_millivolts,
                                            bool *minimum_replaced,
                                            bool *maximum_replaced) {
-  const bool replace_minimum =
-      calibration_min_millivolts < angle_sensor_config.sensor_minimum_millivolts;
-  const bool replace_maximum =
-      calibration_max_millivolts > angle_sensor_config.sensor_maximum_millivolts;
+  const bool replace_minimum = calibration_min_millivolts <
+                               angle_sensor_config.sensor_minimum_millivolts;
+  const bool replace_maximum = calibration_max_millivolts >
+                               angle_sensor_config.sensor_maximum_millivolts;
 
   if (replace_minimum) {
     angle_sensor_config.sensor_minimum_millivolts = calibration_min_millivolts;

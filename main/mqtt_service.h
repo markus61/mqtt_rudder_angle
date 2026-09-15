@@ -61,6 +61,12 @@ void mqtt_publish_provider_calibration(const char *provider_name,
                                        const char *config_value,
                                        int replacement_value);
 
+/** Publish observed calibration state on control_reply/<device>/<provider>. */
+void mqtt_publish_provider_calibration_check(const char *provider_name,
+                                             bool calibration_required,
+                                             int calibration_min_value,
+                                             int calibration_max_value);
+
 /** Publish all compiled-in providers and their supported types. */
 void mqtt_publish_available_providers(void);
 

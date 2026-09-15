@@ -325,6 +325,56 @@ void mqtt_publish_provider_calibration(const char *provider_name,
   }
 }
 
+void mqtt_publish_provider_calibration_check(const char *provider_name,
+                                             bool calibration_required,
+                                             int calibration_min_value,
+                                             int calibration_max_value) {
+  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
+    ESP_LOGW(TAG, "Cannot publish calibration check while MQTT is disconnected");
+    return;
+  }
+  const char *device_name = device_config_get()->name;
+  if (device_name[0] == '\0' || provider_name == NULL ||
+      provider_name[0] == '\0') {
+    ESP_LOGW(TAG, "Cannot publish calibration check without device and provider");
+    return;
+  }
+
+  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
+                   32U];
+  const int topic_length =
+      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
+               device_name, provider_name);
+  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
+    ESP_LOGE(TAG, "Provider calibration-check reply topic is too long");
+    return;
+  }
+
+  char reply_json[160];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, reply_json, sizeof(reply_json), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      json_gen_obj_set_bool(&generator, "calibration_required",
+                            calibration_required) != 0 ||
+      json_gen_obj_set_int(&generator, "calibration_min_value",
+                           calibration_min_value) != 0 ||
+      json_gen_obj_set_int(&generator, "calibration_max_value",
+                           calibration_max_value) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGE(TAG, "Provider calibration-check reply is too large");
+    return;
+  }
+  const int reply_length = json_gen_str_end(&generator);
+  if (reply_length <= 1 || (size_t)reply_length > sizeof(reply_json)) {
+    ESP_LOGE(TAG, "Provider calibration-check reply is too large");
+    return;
+  }
+  if (esp_mqtt_client_publish(mqtt_client, reply_topic, reply_json,
+                              reply_length - 1, 1, 0) < 0) {
+    ESP_LOGW(TAG, "Failed to publish calibration check to '%s'", reply_topic);
+  }
+}
+
 void mqtt_publish_available_providers(void) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
     ESP_LOGW(TAG, "Cannot publish provider catalogue while MQTT is disconnected");

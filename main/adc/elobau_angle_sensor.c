@@ -43,9 +43,9 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
   } else if (strcasecmp(action->valuestring, "calibrate") == 0) {
     bool minimum_replaced = false;
     bool maximum_replaced = false;
-    angle_sensor_config_apply_calibration(
-        calibration_min_millivolts, calibration_max_millivolts,
-        &minimum_replaced, &maximum_replaced);
+    angle_sensor_config_apply_calibration(calibration_min_millivolts,
+                                          calibration_max_millivolts,
+                                          &minimum_replaced, &maximum_replaced);
     if (minimum_replaced) {
       mqtt_publish_provider_calibration("angle_sensor",
                                         "sensor_minimum_millivolts",
@@ -56,16 +56,25 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
                                         "sensor_maximum_millivolts",
                                         calibration_max_millivolts);
     }
+  } else if (strcasecmp(action->valuestring, "calibration_check") == 0) {
+    const angle_sensor_config_t *config = angle_sensor_config_get();
+    const bool calibration_required =
+        calibration_min_millivolts < config->sensor_minimum_millivolts ||
+        calibration_max_millivolts > config->sensor_maximum_millivolts;
+    mqtt_publish_provider_calibration_check(
+        "angle_sensor", calibration_required, calibration_min_millivolts,
+        calibration_max_millivolts);
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     mqtt_publish_provider_braindump("angle_sensor");
   } else if (strcasecmp(action->valuestring, "help") == 0) {
     mqtt_publish_provider_message(
         "angle_sensor",
         "Reads an Elobau angle sensor through the ADC and publishes its "
-        "angle in degrees. Start it with a configure_feature action using a "
-        "supported Elobau type, a name, sensor_pin, sensor_topic, "
-        "sensor_sample_period_ms, and sensor_samples_per_reading. Use "
-        "calibrate to apply observed voltage limits.");
+        "angle in degrees. Configure it with a supported Elobau type and a "
+        "name; every sensor_* setting is optional and overlays its current "
+        "value. Supply sensor_pin to begin sampling. Use "
+        "calibration_check to inspect observed voltage limits, or calibrate "
+        "to apply them.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();
@@ -100,9 +109,9 @@ static TaskHandle_t angle_sensor_task_handle;
 /* Uses a trimmed average of raw readings and converts it to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts,
                                    int samples_per_reading) {
-  int raw_total = 0;
-  int lowest_raw_reading = INT_MAX;
-  int highest_raw_reading = INT_MIN;
+  int total = 0;
+  int lowest_reading = INT_MAX;
+  int highest_reading = INT_MIN;
 
   for (int sample_index = 0; sample_index < samples_per_reading;
        sample_index++) {
@@ -113,26 +122,25 @@ static bool read_sensor_millivolts(int *out_millivolts,
       ESP_LOGW(TAG, "ADC read failed: %s", esp_err_to_name(err));
       return false;
     }
-    raw_total += raw_reading;
-    if (raw_reading < lowest_raw_reading) {
-      lowest_raw_reading = raw_reading;
+    int millivolts = 0;
+    err = adc_cali_raw_to_voltage(adc_calibration_handle, raw_reading,
+                                  &millivolts);
+    if (err != ESP_OK) {
+      ESP_LOGW(TAG, "ADC calibration failed: %s", esp_err_to_name(err));
     }
-    if (raw_reading > highest_raw_reading) {
-      highest_raw_reading = raw_reading;
+    total += millivolts;
+    if (millivolts < lowest_reading) {
+      lowest_reading = millivolts;
+    }
+    if (millivolts > highest_reading) {
+      highest_reading = millivolts;
     }
   }
 
-  const int averaged_raw_reading =
-      (raw_total - lowest_raw_reading - highest_raw_reading) /
-      (samples_per_reading - 2);
+  const int averaged_millivolts =
+      (total - lowest_reading - highest_reading) / (samples_per_reading - 2);
 
-  esp_err_t err = adc_cali_raw_to_voltage(adc_calibration_handle,
-                                          averaged_raw_reading, out_millivolts);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "ADC calibration failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
+  *out_millivolts = averaged_millivolts;
   return true;
 }
 
@@ -152,12 +160,18 @@ static void angle_sensor_task(void *task_argument) {
         (config->sensor_maximum_degrees - config->sensor_minimum_degrees);
     int millivolts = 0;
     if (read_sensor_millivolts(&millivolts, samples_per_reading)) {
-      if (millivolts < config->sensor_minimum_millivolts) {
+      /* Retain the raw observed range for calibration, independent of the
+       * configured range used to convert this reading into an angle. */
+      if (millivolts < calibration_min_millivolts) {
         calibration_min_millivolts = millivolts;
+      }
+      if (millivolts > calibration_max_millivolts) {
+        calibration_max_millivolts = millivolts;
+      }
+      if (millivolts < config->sensor_minimum_millivolts) {
         millivolts = config->sensor_minimum_millivolts;
       }
       if (millivolts > config->sensor_maximum_millivolts) {
-        calibration_max_millivolts = millivolts;
         millivolts = config->sensor_maximum_millivolts;
       }
       const int mv_convert = millivolts - config->sensor_minimum_millivolts;
@@ -222,8 +236,10 @@ esp_err_t angle_sensor_start(void) {
 
   const angle_sensor_config_t *config = angle_sensor_config_get();
   if (config->sensor_gpio_number < 0) {
-    ESP_LOGI(TAG, "No sensor pin configured yet, not sampling");
-    return ESP_ERR_INVALID_STATE;
+    /* A model-only configuration is valid.  It remains attached and will
+     * begin sampling after a later configuration supplies a sensor pin. */
+    ESP_LOGI(TAG, "No sensor pin configured yet, provider is idle");
+    return ESP_OK;
   }
 
   /* The pin was validated as an ADC1 pin when the configuration was applied,

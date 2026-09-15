@@ -23,6 +23,7 @@ static angle_sensor_config_t angle_sensor_config = {
     .sensor_samples_per_reading = 8,
     .sensor_minimum_millivolts = 3300,
     .sensor_maximum_millivolts = 0,
+    .sensor_deadband_millivolt = 5,
     .sensor_topic = "sensors/rudders/starboard",
     .sensor_type = "elobau_424A11A040B",
     .sensor_minimum_degrees = 0.0f,
@@ -267,6 +268,8 @@ void angle_sensor_config_apply_json(const cJSON *configuration) {
                        &angle_sensor_config.sensor_minimum_millivolts);
   apply_integer_member(configuration, "sensor_maximum_millivolts",
                        &angle_sensor_config.sensor_maximum_millivolts);
+  apply_integer_member(configuration, "sensor_deadband_millivolt",
+                       &angle_sensor_config.sensor_deadband_millivolt);
   apply_float_member(configuration, "sensor_minimum_degrees",
                      &angle_sensor_config.sensor_minimum_degrees);
   apply_float_member(configuration, "sensor_maximum_degrees",
@@ -277,9 +280,17 @@ void angle_sensor_config_apply_json(const cJSON *configuration) {
 
   ESP_LOGI(TAG,
            "Angle sensor configuration: pin=%d, sample period=%d ms, "
-           "samples per reading=%d, topic='%s'",
+           "samples per reading=%d, topic='%s', min mV=%d, max mV=%d, "
+           "deadband mV=%d, "
+           "min deg=%.2f, max deg=%.2f, center deg=%.2f",
            angle_sensor_config.sensor_gpio_number,
            angle_sensor_config.sensor_sample_period_ms,
            angle_sensor_config.sensor_samples_per_reading,
-           angle_sensor_config.sensor_topic);
+           angle_sensor_config.sensor_topic,
+           angle_sensor_config.sensor_minimum_millivolts,
+           angle_sensor_config.sensor_maximum_millivolts,
+           angle_sensor_config.sensor_deadband_millivolt,
+           angle_sensor_config.sensor_minimum_degrees,
+           angle_sensor_config.sensor_maximum_degrees,
+           angle_sensor_config.sensor_center_degrees);
 }

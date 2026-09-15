@@ -19,6 +19,7 @@ typedef struct {
   int sensor_samples_per_reading;
   int sensor_minimum_millivolts;
   int sensor_maximum_millivolts;
+  int sensor_deadband_millivolt;
   float sensor_minimum_degrees;
   float sensor_maximum_degrees;
   float sensor_center_degrees;

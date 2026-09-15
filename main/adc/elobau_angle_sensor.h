@@ -21,7 +21,7 @@ extern "C" {
  * Reads the pin, sampling configuration and output topic from the angle-sensor
  * configuration, so a configuration document must have supplied a sensor pin
  * first. Each reading is converted to degrees and remembered; a reading that
- * differs from the last published one by the fixed deadband is published to
+ * differs from the last published one by the configured deadband is published to
  * the configured topic.
  *
  * Safe to call more than once: later calls report that sampling is already

@@ -92,7 +92,7 @@ static adc_channel_t sensor_adc_channel;
 static float last_angle_degrees;
 /* Angle at the last publish. NAN until the first one, which makes the first
  * reading always exceed the deadband and therefore always publish. */
-static float last_published_angle_degrees = NAN;
+static float last_published_millivolts = NAN;
 
 /* INT_MIN means the configured voltage midpoint is still in use. */
 static volatile int centered_reference_millivolts = INT_MIN;
@@ -105,7 +105,6 @@ static TaskHandle_t angle_sensor_task_handle;
 #define SENSOR_MAXIMUM_MILLIVOLTS 3020
 #define SENSOR_MINIMUM_DEGREES 0.0f
 #define SENSOR_MAXIMUM_DEGREES 40.0f
-#define SENSOR_PUBLISH_DEADBAND_DEGREES 0.5f
 /* Uses a trimmed average of raw readings and converts it to millivolts. */
 static bool read_sensor_millivolts(int *out_millivolts,
                                    int samples_per_reading) {
@@ -146,6 +145,7 @@ static bool read_sensor_millivolts(int *out_millivolts,
 
 static void angle_sensor_task(void *task_argument) {
   TickType_t last_wake_time = xTaskGetTickCount();
+  float degrees = 0.0;
 
   while (true) {
     /* Re-read the configuration every iteration so a topic that arrives
@@ -174,22 +174,25 @@ static void angle_sensor_task(void *task_argument) {
       if (millivolts > config->sensor_maximum_millivolts) {
         millivolts = config->sensor_maximum_millivolts;
       }
-      const int mv_convert = millivolts - config->sensor_minimum_millivolts;
-      last_angle_degrees = (float)mv_convert / mv_per_degree;
 
       /* isnan covers the very first reading, where there is nothing to
        * compare against yet. */
-      const bool angle_changed =
-          isnan(last_published_angle_degrees) ||
-          fabsf(last_angle_degrees - last_published_angle_degrees) >=
-              SENSOR_PUBLISH_DEADBAND_DEGREES;
+      if ((isnan(last_published_millivolts) ||
+           fabsf(millivolts - last_published_millivolts) >=
+               config->sensor_deadband_millivolt)) {
 
-      if (angle_changed && mqtt_publish_sensor_reading(config->sensor_topic,
-                                                       last_angle_degrees)) {
-        /* Only advance the reference once the reading actually went
-         * out, so a publish refused while the broker is unreachable is
-         * retried on the next sample. */
-        last_published_angle_degrees = last_angle_degrees;
+        const int mv_convert = millivolts - config->sensor_minimum_millivolts;
+        degrees =
+            (float)mv_convert / mv_per_degree - config->sensor_center_degrees;
+
+        if (mqtt_publish_sensor_reading(config->sensor_topic, degrees)) {
+          /* Only advance the reference once the reading actually went
+           * out, so a publish refused while the broker is unreachable is
+           * retried on the next sample. */
+          last_published_millivolts = millivolts;
+        }
+      } else {
+        ESP_LOGD(TAG, "Angle change below deadband, not publishing");
       }
     }
 

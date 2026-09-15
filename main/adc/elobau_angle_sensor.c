@@ -71,8 +71,8 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
         "angle_sensor",
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Configure it with a supported Elobau type and a "
-        "name; every sensor_* setting is optional and overlays its current "
-        "value. Supply sensor_pin to begin sampling. Use "
+        "name; every sensor_* setting is optional, and omitted settings "
+        "retain their current values. Use "
         "calibration_check to inspect observed voltage limits, or calibrate "
         "to apply them.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
@@ -236,8 +236,7 @@ esp_err_t angle_sensor_start(void) {
 
   const angle_sensor_config_t *config = angle_sensor_config_get();
   if (config->sensor_gpio_number < 0) {
-    /* A model-only configuration is valid.  It remains attached and will
-     * begin sampling after a later configuration supplies a sensor pin. */
+    /* The retained/default configuration does not yet identify a pin. */
     ESP_LOGI(TAG, "No sensor pin configured yet, provider is idle");
     return ESP_OK;
   }

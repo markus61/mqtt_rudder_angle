@@ -99,9 +99,8 @@ bool angle_sensor_configure(const cJSON *configuration) {
     return false;
   }
 
-  /* Sensor settings are an overlay.  A model-only configuration is useful
-   * while wiring/calibration details are still unknown; omitted members keep
-   * their existing (or default) values. */
+  /* Sensor settings are an overlay: fields absent from a configuration action
+   * retain their existing (or default) values. */
   apply_configuration(configuration);
   return true;
 }

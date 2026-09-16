@@ -19,7 +19,7 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | `void <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
 | `esp_err_t <prefix>_start(void)` | Start the configured provider; repeated calls must be safe. Clean up partial startup on failure. |
 | `bool <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and propagate buffer failures. |
-| `void <prefix>_control_action(const char *, int)` | Parse and handle MQTT commands for this provider. The payload is not NUL-terminated. |
+| `esp_err_t <prefix>_control_action(const char *, int)` | Parse and handle MQTT commands for this provider. The payload is not NUL-terminated. Return `ESP_OK` only when the action was accepted; otherwise return the reason for rejection. |
 
 The registry owns copies of names, model types and configuration snapshots, so
 incoming MQTT JSON can be deleted immediately. The type is the model string
@@ -55,6 +55,10 @@ prefix (for example `angle_sensor` or `uptime_sensor`). The MQTT layer routes
 only by topic; providers parse their own actions. Configuration snapshots avoid reading live
 provider fields during JSON output, but providers remain responsible for safe
 access to live settings from their own tasks.
+
+`device_name` is a single MQTT topic level. Configure `your_name` with 1-63
+ASCII letters, digits, `_`, or `-`; separators, MQTT wildcards, whitespace, and
+non-ASCII characters are rejected.
 
 The current providers retain the existing `configure_feature`, `braindump`, and
 `reset` actions. A `configure_feature` request must use the matching provider

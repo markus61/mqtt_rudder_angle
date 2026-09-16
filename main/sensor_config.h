@@ -58,9 +58,12 @@ size_t sensor_provider_count(void);
 /** Stable name used as the final segment of a provider control topic. */
 const char *sensor_provider_name(size_t index);
 
-/** Deliver a control payload to the provider named by its control topic. */
-bool sensor_provider_handle_control(const char *provider_name,
-                                    const char *payload, int payload_length);
+/** Deliver a control payload to the provider named by its control topic.
+ * Returns the provider's result, or ESP_ERR_INVALID_ARG for an invalid name
+ * or payload. */
+esp_err_t sensor_provider_handle_control(const char *provider_name,
+                                         const char *payload,
+                                         int payload_length);
 
 /** Append the names of providers whose start operation succeeded. */
 bool sensor_active_providers_json_add(json_gen_str_t *json);

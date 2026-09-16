@@ -25,7 +25,7 @@ typedef struct {
   void (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
   bool (*config_to_json)(json_gen_str_t *json);
-  void (*control_action)(const char *payload, int payload_length);
+  esp_err_t (*control_action)(const char *payload, int payload_length);
 } sensor_provider_t;
 
 #define SENSOR_PROVIDER(prefix)                                                \
@@ -110,18 +110,18 @@ size_t sensor_available_providers_json_dump(char *buffer, size_t buffer_size) {
                                                       : (size_t)length - 1U;
 }
 
-bool sensor_provider_handle_control(const char *provider_name,
-                                    const char *payload, int payload_length) {
+esp_err_t sensor_provider_handle_control(const char *provider_name,
+                                         const char *payload,
+                                         int payload_length) {
   if (provider_name == NULL || payload == NULL || payload_length < 0) {
-    return false;
+    return ESP_ERR_INVALID_ARG;
   }
   for (size_t i = 0; i < sensor_provider_count(); ++i) {
     if (strcmp(provider_name, providers[i].name) == 0) {
-      providers[i].control_action(payload, payload_length);
-      return true;
+      return providers[i].control_action(payload, payload_length);
     }
   }
-  return false;
+  return ESP_ERR_INVALID_ARG;
 }
 
 /* Reject ambiguous claims as well as unknown models. */

@@ -111,12 +111,14 @@ esp_err_t uptime_sensor_start(void) {
 }
 
 /** Parse and dispatch an MQTT control-action JSON payload. */
-void uptime_sensor_control_action(const char *payload, int payload_length) {
+esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) {
+  esp_err_t result = ESP_OK;
   cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
   const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
   if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
       action->valuestring == NULL) {
     ESP_LOGW("uptime_sensor", "Control payload must contain a string action");
+    result = ESP_ERR_INVALID_ARG;
   } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "type"));
@@ -127,6 +129,7 @@ void uptime_sensor_control_action(const char *payload, int payload_length) {
       ESP_LOGW("uptime_sensor", "Could not configure provider: %s",
                esp_err_to_name(err));
     }
+    result = err;
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     publish_uptime_braindump();
   } else if (strcasecmp(action->valuestring, "help") == 0) {
@@ -137,11 +140,13 @@ void uptime_sensor_control_action(const char *payload, int payload_length) {
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();
-    return;
+    return ESP_OK;
   } else {
     ESP_LOGW("uptime_sensor", "Unknown control action '%s'", action->valuestring);
+    result = ESP_ERR_INVALID_ARG;
   }
   cJSON_Delete(action_json);
+  return result;
 }
 
 bool uptime_sensor_config_to_json(json_gen_str_t *json) { return true; }

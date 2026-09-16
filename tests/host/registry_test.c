@@ -53,6 +53,7 @@ void nvs_close(nvs_handle_t handle) { }
 
 /* A second model shares provider A's singleton. Both may claim "ambiguous". */
 static int values[2], validations[2], restores[2], starts[2], control_actions[2];
+static esp_err_t control_results[2];
 static bool fail_start;
 #define MOCK_PROVIDER(prefix, index, model) \
     const void *prefix##_config_get(void) { return &values[index]; } \
@@ -72,8 +73,8 @@ static bool fail_start;
     void prefix##_config_restore(const void *record) { \
         ++restores[index]; memcpy(&values[index], record, sizeof(int)); } \
     esp_err_t prefix##_start(void) { ++starts[index]; return fail_start ? ESP_FAIL : ESP_OK; } \
-    void prefix##_control_action(const char *payload, int payload_length) { \
-        (void)payload; (void)payload_length; ++control_actions[index]; } \
+    esp_err_t prefix##_control_action(const char *payload, int payload_length) { \
+        (void)payload; (void)payload_length; ++control_actions[index]; return control_results[index]; } \
     bool prefix##_config_to_json(json_gen_str_t *json) { \
         return json_gen_obj_set_int(json, "value", values[index]) == 0; }
 MOCK_PROVIDER(angle_sensor, 0, "model-a")
@@ -106,9 +107,12 @@ int main(void)
     assert(active_lookup->count == 0 && starts[0] == 0 && starts[1] == 0);
     assert(sensor_provider_count() == 2);
     assert(!strcmp(sensor_provider_name(0), "angle_sensor"));
-    assert(sensor_provider_handle_control("uptime_sensor", "{}", 2));
+    assert(sensor_provider_handle_control("uptime_sensor", "{}", 2) == ESP_OK);
     assert(control_actions[1] == 1);
-    assert(!sensor_provider_handle_control("missing", "{}", 2));
+    control_results[1] = ESP_FAIL;
+    assert(sensor_provider_handle_control("uptime_sensor", "{}", 2) == ESP_FAIL);
+    control_results[1] = ESP_OK;
+    assert(sensor_provider_handle_control("missing", "{}", 2) == ESP_ERR_INVALID_ARG);
     char json[1024];
     json_gen_str_t catalogue_generator;
     json_gen_str_start(&catalogue_generator, json, sizeof(json), NULL, NULL);

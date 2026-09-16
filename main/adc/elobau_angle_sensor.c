@@ -137,12 +137,14 @@ static void publish_angle_calibration_check(bool calibration_required,
   }
 }
 
-void angle_sensor_control_action(const char *payload, int payload_length) {
+esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
+  esp_err_t result = ESP_OK;
   cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
   const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
   if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
       action->valuestring == NULL) {
     ESP_LOGW(TAG, "Control payload must contain a string action");
+    result = ESP_ERR_INVALID_ARG;
   } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
     const char *type = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(action_json, "type"));
@@ -152,6 +154,7 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
     if (err != ESP_OK) {
       ESP_LOGW(TAG, "Could not configure provider: %s", esp_err_to_name(err));
     }
+    result = err;
   } else if (strcasecmp(action->valuestring, "calibrate") == 0) {
     bool minimum_replaced = false;
     bool maximum_replaced = false;
@@ -187,7 +190,7 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();
-    return;
+    return ESP_OK;
   } else {
     char reply[256];
     json_gen_str_t generator;
@@ -214,8 +217,10 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
       }
     }
     ESP_LOGW(TAG, "Unknown control action '%s'", action->valuestring);
+    result = ESP_ERR_INVALID_ARG;
   }
   cJSON_Delete(action_json);
+  return result;
 }
 
 static adc_oneshot_unit_handle_t adc_unit_handle;

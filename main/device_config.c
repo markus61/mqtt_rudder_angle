@@ -15,6 +15,31 @@ static const char *TAG = "device_config";
 
 static device_config_t device_config;
 
+/* MQTT control topics embed the device name as one topic level. Restrict it
+ * to portable identifier characters so it cannot add a level or act as a
+ * subscription wildcard. */
+static bool device_name_is_safe_topic_level(const char *name)
+{
+    if (name == NULL || name[0] == '\0')
+    {
+        return false;
+    }
+
+    for (const unsigned char *character = (const unsigned char *)name;
+         *character != '\0'; ++character)
+    {
+        const bool is_ascii_letter = (*character >= 'A' && *character <= 'Z') ||
+                                     (*character >= 'a' && *character <= 'z');
+        const bool is_ascii_digit = *character >= '0' && *character <= '9';
+        if (!is_ascii_letter && !is_ascii_digit && *character != '_' &&
+            *character != '-')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 const device_config_t *device_config_get(void)
 {
     return &device_config;
@@ -114,14 +139,16 @@ bool device_config_validate(const cJSON *configuration)
     const char *name = cJSON_GetStringValue(name_item);
 
     const size_t max_name_length = DEVICE_CONFIG_NAME_SIZE - 1U;
-    if (name != NULL && name[0] != '\0' && strlen(name) <= max_name_length)
+    if (name != NULL && strlen(name) <= max_name_length &&
+        device_name_is_safe_topic_level(name))
     {
         strlcpy(device_config.name, name, sizeof(device_config.name));
         ESP_LOGI(TAG, "Device settings: name='%s'", device_config.name);
         return true;
     }
 
-    ESP_LOGE(TAG, "\"your_name\" must be a non-empty string of at most %d characters",
+    ESP_LOGE(TAG,
+             "\"your_name\" must be 1-%d ASCII letters, digits, '_' or '-'",
              (int)max_name_length);
     return false;
 }

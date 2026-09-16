@@ -43,9 +43,10 @@ extern "C"
      */
     typedef struct
     {
-        /* Name of the device. Empty until a configuration
-         * document supplies one, because there is no sensible default: a guessed
-         * name would either collide with another device or be silently wrong. */
+        /* Name of the device. It is one MQTT topic level, restricted to ASCII
+         * letters, digits, '_' and '-'. Empty until a configuration document
+         * supplies one, because there is no sensible default: a guessed name
+         * would either collide with another device or be silently wrong. */
         char name[DEVICE_CONFIG_NAME_SIZE];
     } device_config_t;
 

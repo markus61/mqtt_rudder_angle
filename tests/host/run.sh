@@ -20,3 +20,12 @@ cc -std=gnu11 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   managed_components/espressif__json_generator/src/json_generator.c \
   -lm -o "$test_build/registry_test"
 "$test_build/registry_test"
+
+cc -std=gnu11 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Wall -Wextra -Werror -Wno-unused-parameter \
+  -Itests/host/include -Imain \
+  -Imanaged_components/espressif__cjson/cJSON \
+  tests/host/device_config_test.c \
+  managed_components/espressif__cjson/cJSON/cJSON.c \
+  -lm -o "$test_build/device_config_test"
+"$test_build/device_config_test"

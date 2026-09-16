@@ -198,8 +198,14 @@ static bool dispatch_provider_control(const char *topic, int topic_length,
             continue;
         if ((size_t)topic_length == strlen(control_topic) &&
             strncmp(topic, control_topic, (size_t)topic_length) == 0)
-            return sensor_provider_handle_control(provider_name, payload,
-                                                  payload_length);
+        {
+            const esp_err_t err = sensor_provider_handle_control(
+                provider_name, payload, payload_length);
+            if (err != ESP_OK)
+                ESP_LOGW(TAG, "Provider '%s' rejected control action: %s",
+                         provider_name, esp_err_to_name(err));
+            return true;
+        }
     }
     return false;
 }

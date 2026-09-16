@@ -42,8 +42,9 @@ void uptime_sensor_config_restore(const void *configuration);
 /** Append provider settings (excluding name/type) from an opaque snapshot. */
 bool uptime_sensor_config_to_json(json_gen_str_t *json);
 
-/** Parse and dispatch an MQTT control-action JSON payload. */
-void uptime_sensor_control_action(const char *payload, int payload_length);
+/** Parse and dispatch an MQTT control-action JSON payload.
+ * Returns ESP_OK when handled, otherwise an error describing rejection. */
+esp_err_t uptime_sensor_control_action(const char *payload, int payload_length);
 
 #ifdef __cplusplus
 }

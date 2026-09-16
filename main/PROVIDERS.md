@@ -79,5 +79,8 @@ Example uptime action (published to `control/<device_name>/uptime_sensor`):
 
 Run `bash tests/host/run.sh` for registry lifecycle tests with fake hardware/NVS,
 real dispatch, JSON generation and persistence, under AddressSanitizer and
-UndefinedBehaviorSanitizer. Build the firmware with the installed ESP-IDF
-environment and `cmake --build build/default`.
+UndefinedBehaviorSanitizer. LeakSanitizer is disabled by default because it
+requires `ptrace`, which sandboxed runners commonly deny; enable it on a
+supported host with `MANT1S_ENABLE_LEAK_CHECKS=1 bash tests/host/run.sh`.
+Build the firmware with the installed ESP-IDF environment and
+`cmake --build build/default`.

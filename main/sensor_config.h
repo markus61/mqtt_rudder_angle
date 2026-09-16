@@ -15,10 +15,16 @@
 extern "C" {
 #endif
 
-/** Registry-owned identity and opaque snapshot for one attached sensor. */
+typedef enum {
+  SENSOR_PROVIDER_ACTIVE = 0,
+  SENSOR_PROVIDER_INACTIVE = 1,
+} sensor_provider_state_t;
+
+/** Registry-owned identity, state, and opaque snapshot for one sensor. */
 typedef struct feature_entry {
   char *name;
   char *type;
+  sensor_provider_state_t state;
   void *configuration;
   size_t configuration_size;
 } feature_entry_t;
@@ -48,6 +54,10 @@ size_t registry_provider_json_dump(const char *provider_name, char *buffer,
 bool registry_provider_identity(const char *provider_name, const char **name,
                                 const char **type);
 
+/** Return one instance's persisted state, or false when its name is unknown. */
+bool registry_provider_state(const char *provider_name,
+                             sensor_provider_state_t *state);
+
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 
@@ -64,10 +74,13 @@ esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
 /** Create, configure, start and persist an additional provider instance. */
 esp_err_t sensor_provider_add_from_mqtt(const cJSON *action_json);
 
-/** Number of active provider instances. */
+/** Start and persist the inactive instance named by a device MQTT action. */
+esp_err_t sensor_provider_activate_from_mqtt(const cJSON *action_json);
+
+/** Number of registered provider instances, active and inactive. */
 size_t sensor_provider_count(void);
 
-/** Name of an active provider instance. */
+/** Name of a registered provider instance. */
 const char *sensor_provider_name(size_t index);
 
 /** One-based registry position for a started named instance, or zero. */
@@ -84,6 +97,9 @@ esp_err_t sensor_provider_handle_control(const char *provider_name,
 
 /** Append every started instance and its normal publication topics. */
 bool sensor_active_providers_json_add(json_gen_str_t *json);
+
+/** Append every inactive registry entry and its identity. */
+bool sensor_inactive_providers_json_add(json_gen_str_t *json);
 
 /** Append all compiled-in providers and their supported model types. */
 bool sensor_available_providers_json_add(json_gen_str_t *json);

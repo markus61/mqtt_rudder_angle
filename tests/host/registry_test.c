@@ -146,6 +146,25 @@ static esp_err_t add(const char *name, const char *type, int value) {
   return err;
 }
 
+static esp_err_t activate(const char *name) {
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "action", "activate");
+  if (name != NULL) cJSON_AddStringToObject(json, "name", name);
+  const esp_err_t err = sensor_provider_activate_from_mqtt(json);
+  cJSON_Delete(json);
+  return err;
+}
+
+static esp_err_t deactivate(const char *name) {
+  static const char payload[] = "{\"action\":\"deactivate\"}";
+  return sensor_provider_handle_control(name, payload, sizeof(payload) - 1U);
+}
+
+static esp_err_t remove_provider(const char *name) {
+  static const char payload[] = "{\"action\":\"remove\"}";
+  return sensor_provider_handle_control(name, payload, sizeof(payload) - 1U);
+}
+
 static int instance_value(const char *name) {
   const size_t index = instance_index_for_name(name);
   assert(index != SIZE_MAX);
@@ -232,6 +251,7 @@ int main(void) {
   assert(one_length == strlen(json));
   cJSON *one = cJSON_Parse(json);
   assert(cJSON_GetObjectItem(one, "value")->valueint == 33);
+  assert(!strcmp(cJSON_GetObjectItem(one, "state")->valuestring, "active"));
   cJSON_Delete(one);
 
   json_gen_str_t active_generator;
@@ -252,15 +272,78 @@ int main(void) {
   assert(registry_providers_json_dump(json, length + 1U) == length);
   assert(registry_providers_json_dump(json, length) == 0U);
 
-  /* All four independent snapshots restore without calling configure. */
+  /* Deactivation is a common registry lifecycle action, not provider code. */
+  sensor_provider_state_t state;
+  const int destroys_before_deactivate = destroys[0];
+  assert(deactivate("port") == ESP_OK);
+  assert(registry_provider_state("port", &state));
+  assert(state == SENSOR_PROVIDER_INACTIVE);
+  assert(destroys[0] == destroys_before_deactivate + 1);
+  assert(!sensor_provider_control_component("port", component, sizeof(component)));
+  assert(sensor_provider_handle_control("port", "{}", 2) == ESP_ERR_INVALID_ARG);
+  assert(sensor_provider_number("port") == 0U);
+  assert(registry_provider_json_dump("port", json, sizeof(json)) == strlen(json));
+  one = cJSON_Parse(json);
+  assert(!strcmp(cJSON_GetObjectItem(one, "state")->valuestring, "inactive"));
+  assert(cJSON_GetObjectItem(one, "value")->valueint == 33);
+  cJSON_Delete(one);
+
+  json_gen_str_start(&active_generator, json, sizeof(json), NULL, NULL);
+  assert(json_gen_start_array(&active_generator) == 0);
+  assert(sensor_active_providers_json_add(&active_generator));
+  assert(json_gen_end_array(&active_generator) == 0);
+  assert(json_gen_str_end(&active_generator) > 1);
+  one = cJSON_Parse(json);
+  assert(cJSON_GetArraySize(one) == 3);
+  cJSON_Delete(one);
+
+  json_gen_str_start(&active_generator, json, sizeof(json), NULL, NULL);
+  assert(json_gen_start_array(&active_generator) == 0);
+  assert(sensor_inactive_providers_json_add(&active_generator));
+  assert(json_gen_end_array(&active_generator) == 0);
+  assert(json_gen_str_end(&active_generator) > 1);
+  one = cJSON_Parse(json);
+  assert(cJSON_GetArraySize(one) == 1);
+  assert(!strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(one, 0), "name")->valuestring,
+                 "port"));
+  assert(!strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(one, 0), "type")->valuestring,
+                 "model-a"));
+  cJSON_Delete(one);
+
+  /* Inactive records restore their snapshots without starting an instance. */
   reboot();
   assert(registry_init_on_boot() == ESP_OK);
   assert(sensor_provider_count() == 4U);
   assert(validations[0] == 0 && validations[1] == 0);
-  assert(starts[0] == 3 && starts[1] == 1);
+  assert(starts[0] == 2 && starts[1] == 1);
   assert(instance_value("rudder") == 7);
-  assert(instance_value("port") == 33);
   assert(instance_value("starboard") == 22);
+  assert(registry_provider_state("port", &state));
+  assert(state == SENSOR_PROVIDER_INACTIVE);
+  assert(!sensor_provider_control_component("port", component, sizeof(component)));
+
+  /* Device-scoped activate restores and starts the named inactive record. */
+  assert(activate("missing") == ESP_ERR_INVALID_ARG);
+  assert(activate("rudder") == ESP_ERR_INVALID_STATE);
+  assert(activate("port") == ESP_OK);
+  assert(instance_value("port") == 33 && starts[0] == 3);
+  assert(registry_provider_state("port", &state));
+  assert(state == SENSOR_PROVIDER_ACTIVE);
+  assert(sensor_provider_control_component("port", component, sizeof(component)));
+
+  /* Remove destroys the instance and erases its complete registry record. */
+  const int destroys_before_remove = destroys[0];
+  assert(remove_provider("port") == ESP_OK);
+  assert(destroys[0] == destroys_before_remove + 1);
+  assert(sensor_provider_count() == 3U);
+  assert(!registry_provider_state("port", &state));
+  assert(!sensor_provider_control_component("port", component, sizeof(component)));
+  assert(sensor_provider_handle_control("port", "{}", 2) == ESP_ERR_INVALID_ARG);
+  assert(registry_provider_json_dump("port", json, sizeof(json)) == 0U);
+  reboot();
+  assert(registry_init_on_boot() == ESP_OK);
+  assert(sensor_provider_count() == 3U);
+  assert(!registry_provider_state("port", &state));
 
   /* Failed validation and startup restore only the targeted instance. */
   const int writes_before = writes;
@@ -269,17 +352,17 @@ int main(void) {
   fail_start = true;
   assert(add("failed", "model-b", 8) == ESP_FAIL);
   fail_start = false;
-  assert(sensor_provider_count() == 4U &&
+  assert(sensor_provider_count() == 3U &&
          instance_index_for_name("failed") == SIZE_MAX);
 
   /* A persistence failure leaves the live instance visible for retry. */
   fail_commit = true;
   assert(add("live_only", "model-b", 9) == ESP_FAIL);
-  assert(sensor_provider_count() == 5U && instance_value("live_only") == 9);
+  assert(sensor_provider_count() == 4U && instance_value("live_only") == 9);
   fail_commit = false;
   assert(configure("live_only", "live_only", "model-b", 9) == ESP_OK);
 
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 6; ++i) {
     char name[16];
     snprintf(name, sizeof(name), "extra%d", i);
     assert(add(name, "model-b", i) == ESP_OK);

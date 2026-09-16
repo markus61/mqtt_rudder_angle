@@ -12,6 +12,12 @@ All notable changes to ManT1S Angle are documented in this file.
   provider implementation or model type.
 - Added complete-registry bootstrap coverage, same-type instance restoration,
   name uniqueness, capacity, and persistence-retry coverage to host tests.
+- Added persisted `active`/`inactive` provider state, a common provider-scoped
+  `deactivate` lifecycle action, and device-scoped `activate` by provider name.
+- Added the common provider-scoped `remove` action, which destroys an instance
+  and permanently removes its persisted registry record.
+- Added `runtime.inactive_sensors` to device braindumps, listing the retained
+  name and type of each inactive registry entry.
 
 ### Changed
 
@@ -19,8 +25,8 @@ All notable changes to ManT1S Angle are documented in this file.
   boot; later boots create exactly the instances recorded in NVS, without
   synthesizing provider types absent from an existing registry.
 - Treat numeric bootstrap names as ordinary globally unique MQTT names.
-- Keep the version-1 NVS record layout while allowing multiple records of the
-  same type; every persisted record carries its own name, type, and settings.
+- Upgraded the registry NVS layout to version 2 so every record carries its
+  name, type, state, and settings; version-1 records migrate as active.
 - Keep `configure` provider-scoped, updating and persisting only the instance
   selected by its current control topic; a configured instance may be renamed
   but not retargeted to a different type.

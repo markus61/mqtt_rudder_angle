@@ -37,6 +37,7 @@ Each record owns and stores:
 | --- | --- |
 | `name` | Globally unique MQTT control/reply component. |
 | `type` | Exact supported model string used to select a provider factory. |
+| `state` | `active` starts and runs the instance; `inactive` retains its identity and settings without a live instance. |
 | `settings` | Opaque provider-owned configuration snapshot. |
 
 The registry's in-memory runtime table pairs every record with its selected
@@ -47,11 +48,12 @@ Names are 1-63 ASCII letters, digits, `_`, or `-`. Numeric names are ordinary
 names: they have no special representation and occupy the same global namespace
 as human-readable names.
 
-The NVS version-1 layout already stores multiple records of the same type and
-is unchanged. At boot, the registry validates every persisted name, type, and
-configuration size before restoring settings and starting any instance. Stored
-order is retained. An unreadable, unsupported, or incompatible registry fails
-initialization; the application-level incompatibility policy then applies.
+NVS version 2 stores the state with each record. Version-1 registries are read
+as all active and are upgraded by the next registry write. At boot, the registry
+validates every persisted name, type, state, and configuration size, then
+restores and starts only active instances. Stored order is retained. An
+unreadable, unsupported, or incompatible registry fails initialization; the
+application-level incompatibility policy then applies.
 
 ### Bootstrap
 
@@ -102,6 +104,34 @@ unique safe name, and persists its snapshot. Its type may be omitted or repeated
 but cannot change. When renamed, MQTT subscribes the new topic before removing
 the old subscription.
 
+`deactivate` is provider-scoped and requires no provider-specific support. It
+destroys the live instance, releasing its resources and stopping publications,
+marks the registry record inactive, persists it, and removes that instance's
+control-topic subscription. Its name, type, and settings remain in the
+registry. An inactive instance has no provider control topic.
+
+```json
+{"action":"deactivate"}
+```
+
+`remove` is provider-scoped and also requires no provider-specific support. It
+deactivates the addressed instance, permanently removes its registry entry
+(including saved settings), persists the reduced registry, and unsubscribes its
+control topic. A removed provider can only be recreated with `add_provider`.
+
+```json
+{"action":"remove"}
+```
+
+`activate` is device-scoped and requires the `name` of an inactive registry
+entry. It recreates that saved instance, restores its settings, starts it,
+marks and persists it as active, and subscribes its provider control topic.
+Activating an unknown or already active name is rejected.
+
+```json
+{"action":"activate","name":"port_rudder"}
+```
+
 ```json
 {
   "action": "configure",
@@ -113,10 +143,12 @@ the old subscription.
 
 Replies use `control_reply/<device>/<name>`. Provider `braindump` replies
 include that instance's name, type, and settings. Device braindumps expose all
-started instances in `runtime.active_sensors`, including their working topics.
+started instances in `runtime.active_sensors`, including their working topics,
+and retained inactive registry entries in `runtime.inactive_sensors` with their
+name and type.
 
-`reset` remains device-scoped. Provider removal and hardware-conflict policy
-are intentionally outside the current implementation.
+`reset` remains device-scoped. Hardware-conflict policy is intentionally
+outside the current implementation.
 
 ## Verification
 

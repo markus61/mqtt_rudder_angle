@@ -202,6 +202,29 @@ static bool dispatch_device_control(esp_mqtt_client_handle_t client,
             ESP_LOGW(TAG, "Could not add provider: %s", esp_err_to_name(err));
         }
     }
+    else if (strcasecmp(action->valuestring, "activate") == 0)
+    {
+        const esp_err_t err = sensor_provider_activate_from_mqtt(action_json);
+        const char *name = cJSON_GetStringValue(
+            cJSON_GetObjectItemCaseSensitive(action_json, "name"));
+        char sensor_component[SENSOR_CONFIG_NAME_SIZE];
+        if (name != NULL &&
+            sensor_provider_control_component(name, sensor_component,
+                                              sizeof(sensor_component)))
+        {
+            char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+            if (format_sensor_control_topic(control_topic, sizeof(control_topic),
+                                            sensor_component))
+            {
+                ESP_LOGI(TAG, "Subscribing to activated sensor '%s'", control_topic);
+                esp_mqtt_client_subscribe(client, control_topic, 1);
+            }
+        }
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not activate provider: %s", esp_err_to_name(err));
+        }
+    }
     else if (strcasecmp(action->valuestring, "nvs_write") == 0)
     {
         const esp_err_t err = device_config_store_to_nvs();
@@ -233,8 +256,13 @@ static void synchronize_sensor_control_subscription(esp_mqtt_client_handle_t cli
     char new_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
     const char *provider_name = sensor_provider_name(provider_index);
     if (!sensor_provider_control_component(provider_name, sensor_component,
-                                           sizeof(sensor_component)) ||
-        !format_sensor_control_topic(new_topic, sizeof(new_topic), sensor_component) ||
+                                           sizeof(sensor_component)))
+    {
+        ESP_LOGI(TAG, "Unsubscribing inactive sensor control topic '%s'", old_topic);
+        esp_mqtt_client_unsubscribe(client, old_topic);
+        return;
+    }
+    if (!format_sensor_control_topic(new_topic, sizeof(new_topic), sensor_component) ||
         strcmp(old_topic, new_topic) == 0)
         return;
 
@@ -261,11 +289,25 @@ static bool dispatch_provider_control(esp_mqtt_client_handle_t client,
         if ((size_t)topic_length == strlen(control_topic) &&
             strncmp(topic, control_topic, (size_t)topic_length) == 0)
         {
+            cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+            const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
+            const bool removing = cJSON_IsString(action) && action->valuestring != NULL &&
+                                  strcasecmp(action->valuestring, "remove") == 0;
+            cJSON_Delete(action_json);
             const esp_err_t err = sensor_provider_handle_control(
                 provider_name, payload, payload_length);
             /* Configure can alter the live identity even when NVS persistence
              * fails. Always compare the registry afterwards to keep topics in sync. */
-            synchronize_sensor_control_subscription(client, control_topic, i);
+            if (removing)
+            {
+                ESP_LOGI(TAG, "Unsubscribing removed sensor control topic '%s'",
+                         control_topic);
+                esp_mqtt_client_unsubscribe(client, control_topic);
+            }
+            else
+            {
+                synchronize_sensor_control_subscription(client, control_topic, i);
+            }
             if (err != ESP_OK)
                 ESP_LOGW(TAG, "Sensor '%s' rejected control action: %s",
                          sensor_component, esp_err_to_name(err));

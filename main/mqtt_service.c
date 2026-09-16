@@ -144,6 +144,9 @@ void mqtt_publish_device_braindump(void) {
       json_gen_push_array(&generator, "active_sensors") != 0 ||
       !sensor_active_providers_json_add(&generator) ||
       json_gen_pop_array(&generator) != 0 ||
+      json_gen_push_array(&generator, "inactive_sensors") != 0 ||
+      !sensor_inactive_providers_json_add(&generator) ||
+      json_gen_pop_array(&generator) != 0 ||
       json_gen_pop_object(&generator) != 0 ||
       json_gen_end_object(&generator) != 0) {
     ESP_LOGE(TAG, "Braindump state is too large");

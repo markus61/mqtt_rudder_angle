@@ -13,7 +13,7 @@
 
 #define SENSOR_CONFIG_LOOKUP_NVS_KEY "sensor_configs"
 #define SENSOR_CONFIG_LOOKUP_NVS_MAGIC UINT32_C(0x53434647)
-#define SENSOR_CONFIG_LOOKUP_NVS_VERSION UINT16_C(1)
+#define SENSOR_CONFIG_LOOKUP_NVS_VERSION UINT16_C(2)
 #define REGISTRY_INITIAL_CAPACITY SENSOR_PROVIDER_MAX_INSTANCES
 
 /* Capacity limits attachments, not model identifiers or provider dispatch. */
@@ -35,6 +35,14 @@ typedef struct
     uint32_t name_size;
     uint32_t type_size;
     uint32_t settings_size;
+} sensor_config_nvs_record_v1_t;
+
+typedef struct
+{
+    uint32_t name_size;
+    uint32_t type_size;
+    uint32_t settings_size;
+    uint32_t state;
 } sensor_config_nvs_record_t;
 
 static bool valid_text(const char *text)
@@ -66,6 +74,8 @@ esp_err_t registry_write(const registry_t *lookup)
         const feature_entry_t *configuration = lookup->configurations[index];
         if (configuration == NULL || !valid_text(configuration->name) ||
             !valid_text(configuration->type) || configuration->configuration == NULL ||
+            (configuration->state != SENSOR_PROVIDER_ACTIVE &&
+             configuration->state != SENSOR_PROVIDER_INACTIVE) ||
             configuration->configuration_size == 0U || strlen(configuration->name) > UINT32_MAX ||
             strlen(configuration->type) > UINT32_MAX || configuration->configuration_size > UINT32_MAX ||
             !size_add(&serialized_size, sizeof(sensor_config_nvs_record_t)) ||
@@ -101,6 +111,7 @@ esp_err_t registry_write(const registry_t *lookup)
             .name_size = (uint32_t)name_size,
             .type_size = (uint32_t)type_size,
             .settings_size = (uint32_t)configuration->configuration_size,
+            .state = (uint32_t)configuration->state,
         };
         memcpy(cursor, &record, sizeof(record));
         cursor += sizeof(record);
@@ -212,7 +223,8 @@ esp_err_t registry_read(registry_t *lookup)
     sensor_config_nvs_header_t header;
     memcpy(&header, bytes, sizeof(header));
     if (header.magic != SENSOR_CONFIG_LOOKUP_NVS_MAGIC ||
-        header.version != SENSOR_CONFIG_LOOKUP_NVS_VERSION ||
+        (header.version != UINT16_C(1) &&
+         header.version != SENSOR_CONFIG_LOOKUP_NVS_VERSION) ||
         header.count > lookup->capacity)
     {
         free(bytes);
@@ -234,16 +246,34 @@ esp_err_t registry_read(registry_t *lookup)
     const uint8_t *end = bytes + size;
     for (size_t i = 0; i < header.count; ++i)
     {
-        if ((size_t)(end - cursor) < sizeof(sensor_config_nvs_record_t))
+        const size_t record_header_size =
+            header.version == UINT16_C(1) ? sizeof(sensor_config_nvs_record_v1_t)
+                                         : sizeof(sensor_config_nvs_record_t);
+        if ((size_t)(end - cursor) < record_header_size)
         {
             err = ESP_ERR_INVALID_SIZE;
             goto cleanup;
         }
-        sensor_config_nvs_record_t record;
-        memcpy(&record, cursor, sizeof(record));
-        cursor += sizeof(record);
+        sensor_config_nvs_record_t record = {
+            .state = SENSOR_PROVIDER_ACTIVE,
+        };
+        if (header.version == UINT16_C(1))
+        {
+            sensor_config_nvs_record_v1_t old_record;
+            memcpy(&old_record, cursor, sizeof(old_record));
+            record.name_size = old_record.name_size;
+            record.type_size = old_record.type_size;
+            record.settings_size = old_record.settings_size;
+        }
+        else
+        {
+            memcpy(&record, cursor, sizeof(record));
+        }
+        cursor += record_header_size;
         size_t record_size = 0;
         if (record.name_size == 0 || record.type_size == 0 || record.settings_size == 0 ||
+            (record.state != SENSOR_PROVIDER_ACTIVE &&
+             record.state != SENSOR_PROVIDER_INACTIVE) ||
             !size_add(&record_size, record.name_size) ||
             !size_add(&record_size, record.type_size) ||
             !size_add(&record_size, record.settings_size) ||
@@ -275,6 +305,7 @@ esp_err_t registry_read(registry_t *lookup)
             err = ESP_ERR_NO_MEM;
             goto cleanup;
         }
+        entry->state = (sensor_provider_state_t)record.state;
         for (size_t j = 0; j < staged.count; ++j)
         {
             if (strcmp(staged.configurations[j]->name, entry->name) == 0)

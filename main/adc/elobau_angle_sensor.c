@@ -80,7 +80,7 @@ static void publish_angle_braindump(void) {
   if (json_gen_start_object(&generator) != 0 ||
       !json_obj_set_escaped_string(&generator, "name", name) ||
       !json_obj_set_escaped_string(&generator, "type", type) ||
-      !angle_sensor_config_to_json(&generator) ||
+      angle_sensor_config_to_json(&generator) != ESP_OK ||
       json_gen_end_object(&generator) != 0) {
     ESP_LOGW(TAG, "Provider configuration is too large");
     return;
@@ -184,7 +184,8 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Configure it with a supported Elobau type and a "
         "name; every sensor_* setting is optional, and omitted settings "
-        "retain their current values. Use "
+        "retain their current values, while an invalid supplied setting "
+        "rejects the entire action. Use "
         "calibration_check to inspect observed voltage limits, or calibrate "
         "to apply them.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
@@ -448,9 +449,12 @@ release_adc_unit:
   return err;
 }
 
-bool angle_sensor_config_to_json(json_gen_str_t *json) {
+esp_err_t angle_sensor_config_to_json(json_gen_str_t *json) {
   const angle_sensor_config_t *config = angle_sensor_config_get();
-  return json != NULL && config != NULL &&
+  if (json == NULL || config == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return
          json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) ==
              0 &&
          json_gen_obj_set_int(json, "sensor_samples_per_reading",
@@ -468,5 +472,7 @@ bool angle_sensor_config_to_json(json_gen_str_t *json) {
          json_gen_obj_set_float(json, "sensor_center_degrees",
                                 config->sensor_center_degrees) == 0 &&
          json_obj_set_escaped_string(json, "sensor_topic",
-                                     config->sensor_topic);
+                                     config->sensor_topic)
+             ? ESP_OK
+             : ESP_FAIL;
 }

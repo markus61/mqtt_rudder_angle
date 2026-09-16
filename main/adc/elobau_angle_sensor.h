@@ -54,15 +54,17 @@ const char *angle_sensor_supported_type(size_t index);
  *        Validate and apply an angle-sensor configuration action.
  *
  * @param configuration The cJSON object containing the configuration.
- * @return true if the configuration was successfully applied, false otherwise.
+ * @return ESP_OK if the configuration was successfully applied; otherwise a
+ *         validation error. The live configuration is unchanged on failure.
  */
-bool angle_sensor_configure(const cJSON *configuration);
+esp_err_t angle_sensor_configure(const cJSON *configuration);
 
-/** Restore a trusted record of config_size() bytes; no MQTT validation. */
-void angle_sensor_config_restore(const void *configuration);
+/** Restore a trusted record of config_size() bytes; no MQTT validation.
+ * Returns ESP_ERR_INVALID_ARG for a null record. */
+esp_err_t angle_sensor_config_restore(const void *configuration);
 
-/** Read provider settings (excluding name/type). */
-bool angle_sensor_config_to_json(json_gen_str_t *json);
+/** Append provider settings (excluding name/type) to an open JSON object. */
+esp_err_t angle_sensor_config_to_json(json_gen_str_t *json);
 
 /** Handle a control payload received on this provider's MQTT topic.
  * Returns ESP_OK when handled, otherwise an error describing rejection. */

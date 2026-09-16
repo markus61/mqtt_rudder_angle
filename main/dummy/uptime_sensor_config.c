@@ -24,10 +24,12 @@ const void *uptime_sensor_config_get(void) { return &configuration; }
 
 size_t uptime_sensor_config_size(void) { return sizeof(configuration); }
 
-void uptime_sensor_config_restore(const void *record) {
-  if (record != NULL) {
-    memcpy(&configuration, record, sizeof(configuration));
+esp_err_t uptime_sensor_config_restore(const void *record) {
+  if (record == NULL) {
+    return ESP_ERR_INVALID_ARG;
   }
+  memcpy(&configuration, record, sizeof(configuration));
+  return ESP_OK;
 }
 
 bool uptime_sensor_can_serve_type(const char *type) {
@@ -55,35 +57,36 @@ const char *uptime_sensor_supported_type(size_t index) {
                                                        : NULL;
 }
 
-bool uptime_sensor_configure(const cJSON *configuration_json) {
-  if (configuration_json == NULL ||
+esp_err_t uptime_sensor_configure(const cJSON *configuration_json) {
+  if (!cJSON_IsObject(configuration_json) ||
       !uptime_sensor_can_serve_type(cJSON_GetStringValue(
           cJSON_GetObjectItemCaseSensitive(configuration_json, "type")))) {
-    return false;
+    return ESP_ERR_INVALID_ARG;
   }
 
   const cJSON *interval =
       cJSON_GetObjectItemCaseSensitive(configuration_json, "interval");
   if (!cJSON_IsNumber(interval) || interval->valueint <= 0 ||
       interval->valueint > INT_MAX / 1000) {
-    return false;
+    return ESP_ERR_INVALID_ARG;
   }
 
   const char *topic = cJSON_GetStringValue(
       cJSON_GetObjectItemCaseSensitive(configuration_json, "sensor_topic"));
   if (topic != NULL && (topic[0] == '\0' ||
                         strlen(topic) >= sizeof(configuration.sensor_topic))) {
-    return false;
+    return ESP_ERR_INVALID_ARG;
   }
 
-  configuration.interval_seconds = interval->valueint;
+  uptime_sensor_config_t candidate = configuration;
+  candidate.interval_seconds = interval->valueint;
   if (topic != NULL) {
-    strlcpy(configuration.sensor_topic, topic,
-            sizeof(configuration.sensor_topic));
+    strlcpy(candidate.sensor_topic, topic, sizeof(candidate.sensor_topic));
   }
-  strlcpy(configuration.sensor_type,
+  strlcpy(candidate.sensor_type,
           cJSON_GetStringValue(
               cJSON_GetObjectItemCaseSensitive(configuration_json, "type")),
-          sizeof(configuration.sensor_type));
-  return true;
+          sizeof(candidate.sensor_type));
+  configuration = candidate;
+  return ESP_OK;
 }

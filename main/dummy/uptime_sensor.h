@@ -33,14 +33,14 @@ size_t uptime_sensor_supported_type_count(void);
 /** Return a supported model type by index, or NULL when out of range. */
 const char *uptime_sensor_supported_type(size_t index);
 
-/** Validate and apply an uptime-sensor configuration action. */
-bool uptime_sensor_configure(const cJSON *configuration);
+/** Validate and apply an uptime-sensor configuration action atomically. */
+esp_err_t uptime_sensor_configure(const cJSON *configuration);
 
 /** Restore a trusted record of config_size() bytes; no MQTT validation. */
-void uptime_sensor_config_restore(const void *configuration);
+esp_err_t uptime_sensor_config_restore(const void *configuration);
 
-/** Append provider settings (excluding name/type) from an opaque snapshot. */
-bool uptime_sensor_config_to_json(json_gen_str_t *json);
+/** Append provider settings (excluding name/type) to an open JSON object. */
+esp_err_t uptime_sensor_config_to_json(json_gen_str_t *json);
 
 /** Parse and dispatch an MQTT control-action JSON payload.
  * Returns ESP_OK when handled, otherwise an error describing rejection. */

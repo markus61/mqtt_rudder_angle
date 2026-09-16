@@ -21,10 +21,10 @@ typedef struct {
   const char *(*supported_type)(size_t index);
   const void *(*config_get)(void);
   size_t (*config_size)(void);
-  bool (*configure)(const cJSON *configuration);
-  void (*config_restore)(const void *configuration);
+  esp_err_t (*configure)(const cJSON *configuration);
+  esp_err_t (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
-  bool (*config_to_json)(json_gen_str_t *json);
+  esp_err_t (*config_to_json)(json_gen_str_t *json);
   esp_err_t (*control_action)(const char *payload, int payload_length);
 } sensor_provider_t;
 
@@ -163,7 +163,7 @@ bool registry_providers_json_add(json_gen_str_t *generator) {
         json_gen_start_object(generator) != 0 ||
         !json_obj_set_escaped_string(generator, "name", entry->name) ||
         !json_obj_set_escaped_string(generator, "type", entry->type) ||
-        !provider->config_to_json(generator) ||
+        provider->config_to_json(generator) != ESP_OK ||
         json_gen_end_object(generator) != 0) {
       return false;
     }
@@ -208,7 +208,7 @@ size_t registry_provider_json_dump(const char *provider_name, char *buffer,
     if (entry->configuration_size != provider->config_size() ||
         !json_obj_set_escaped_string(&generator, "name", entry->name) ||
         !json_obj_set_escaped_string(&generator, "type", entry->type) ||
-        !provider->config_to_json(&generator)) {
+        provider->config_to_json(&generator) != ESP_OK) {
       return 0U;
     }
     break;
@@ -276,7 +276,13 @@ esp_err_t registry_init_on_boot(void) {
   for (size_t i = 0; i < active_lookup->count; ++i) {
     const feature_entry_t *entry = active_lookup->configurations[i];
     const sensor_provider_t *provider = provider_for_type(entry->type);
-    provider->config_restore(entry->configuration);
+    err = provider->config_restore(entry->configuration);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Could not restore '%s': %s", entry->name,
+               esp_err_to_name(err));
+      registry_clear(active_lookup);
+      return err;
+    }
     err = provider->start();
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Could not start '%s': %s", entry->name,
@@ -335,16 +341,17 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
     return ESP_ERR_NO_MEM;
   }
   /* Initially the candidate holds a rollback copy of live provider settings. */
-  if (!provider->configure(action_json)) {
-    provider->config_restore(candidate->configuration);
-    registry_entry_free(candidate);
-    return ESP_ERR_INVALID_ARG;
-  }
-  esp_err_t err = provider->start();
+  esp_err_t err = provider->configure(action_json);
   if (err != ESP_OK) {
-    provider->config_restore(candidate->configuration);
+    const esp_err_t restore_err = provider->config_restore(candidate->configuration);
     registry_entry_free(candidate);
-    return err;
+    return restore_err != ESP_OK ? restore_err : err;
+  }
+  err = provider->start();
+  if (err != ESP_OK) {
+    const esp_err_t restore_err = provider->config_restore(candidate->configuration);
+    registry_entry_free(candidate);
+    return restore_err != ESP_OK ? restore_err : err;
   }
   provider_is_started[provider_index(provider)] = true;
 

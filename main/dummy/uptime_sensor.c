@@ -70,7 +70,7 @@ static void publish_uptime_braindump(void) {
   if (json_gen_start_object(&generator) != 0 ||
       !json_obj_set_escaped_string(&generator, "name", name) ||
       !json_obj_set_escaped_string(&generator, "type", type) ||
-      !uptime_sensor_config_to_json(&generator) ||
+      uptime_sensor_config_to_json(&generator) != ESP_OK ||
       json_gen_end_object(&generator) != 0) {
     ESP_LOGW("uptime_sensor", "Provider configuration is too large");
     return;
@@ -136,7 +136,8 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
     publish_uptime_reply_message(
         "Publishes elapsed device uptime periodically. Start it with a "
         "configure_feature action using type 'dummy_uptime', a name, an "
-        "interval in seconds, and an optional sensor_topic.");
+        "interval in seconds, and an optional sensor_topic. Invalid supplied "
+        "settings reject the entire action.");
   } else if (strcasecmp(action->valuestring, "reset") == 0) {
     cJSON_Delete(action_json);
     esp_restart();
@@ -149,4 +150,6 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
   return result;
 }
 
-bool uptime_sensor_config_to_json(json_gen_str_t *json) { return true; }
+esp_err_t uptime_sensor_config_to_json(json_gen_str_t *json) {
+  return json != NULL ? ESP_OK : ESP_ERR_INVALID_ARG;
+}

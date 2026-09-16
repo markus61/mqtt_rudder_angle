@@ -64,19 +64,20 @@ static bool fail_start;
     bool prefix##_can_serve_type(const char *type) { \
         return type && (!strcmp(type, model) || !strcmp(type, "ambiguous") || \
             (index == 0 && !strcmp(type, "model-a2"))); } \
-    bool prefix##_configure(const cJSON *json) { \
+    esp_err_t prefix##_configure(const cJSON *json) { \
         ++validations[index]; \
         const cJSON *v = cJSON_GetObjectItemCaseSensitive(json, "value"); \
         values[index] = -999; /* Deliberately mutate even on validation failure. */ \
-        if (!cJSON_IsNumber(v) || v->valueint < 0) return false; \
-        values[index] = v->valueint; return true; } \
-    void prefix##_config_restore(const void *record) { \
-        ++restores[index]; memcpy(&values[index], record, sizeof(int)); } \
+        if (!cJSON_IsNumber(v) || v->valueint < 0) return ESP_ERR_INVALID_ARG; \
+        values[index] = v->valueint; return ESP_OK; } \
+    esp_err_t prefix##_config_restore(const void *record) { \
+        if (record == NULL) return ESP_ERR_INVALID_ARG; \
+        ++restores[index]; memcpy(&values[index], record, sizeof(int)); return ESP_OK; } \
     esp_err_t prefix##_start(void) { ++starts[index]; return fail_start ? ESP_FAIL : ESP_OK; } \
     esp_err_t prefix##_control_action(const char *payload, int payload_length) { \
         (void)payload; (void)payload_length; ++control_actions[index]; return control_results[index]; } \
-    bool prefix##_config_to_json(json_gen_str_t *json) { \
-        return json_gen_obj_set_int(json, "value", values[index]) == 0; }
+    esp_err_t prefix##_config_to_json(json_gen_str_t *json) { \
+        return json_gen_obj_set_int(json, "value", values[index]) == 0 ? ESP_OK : ESP_FAIL; }
 MOCK_PROVIDER(angle_sensor, 0, "model-a")
 MOCK_PROVIDER(uptime_sensor, 1, "model-b")
 

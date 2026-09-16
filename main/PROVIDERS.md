@@ -15,10 +15,10 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | `size_t <prefix>_supported_type_count(void)` / `const char *<prefix>_supported_type(size_t)` | Enumerate the exact model strings exposed by the device-level `providers` action. Return NULL for an out-of-range index. |
 | `const void *<prefix>_config_get(void)` | Borrow the live provider-owned plain-data configuration; lifetime is the entire process. Keep sensible defaults in the provider. |
 | `size_t <prefix>_config_size(void)` | Return the fixed configuration record size. Do not persist pointers, task handles or callbacks. |
-| `bool <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration. Do not start a task here. Rejected changes are restored by the registry. |
-| `void <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
+| `esp_err_t <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration atomically. Do not start a task here. Return an error without changing live settings when validation fails. |
+| `esp_err_t <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
 | `esp_err_t <prefix>_start(void)` | Start the configured provider; repeated calls must be safe. Clean up partial startup on failure. |
-| `bool <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and propagate buffer failures. |
+| `esp_err_t <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and return a serialization error on failure. |
 | `esp_err_t <prefix>_control_action(const char *, int)` | Parse and handle MQTT commands for this provider. The payload is not NUL-terminated. Return `ESP_OK` only when the action was accepted; otherwise return the reason for rejection. |
 
 The registry owns copies of names, model types and configuration snapshots, so

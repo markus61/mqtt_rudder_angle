@@ -136,7 +136,8 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
         "configure action using type 'dummy_uptime', a safe name, an interval "
         "in seconds, and an optional sensor_topic. It moves control and "
         "replies from the sensor number to that name. Invalid supplied "
-        "settings reject the entire action.");
+        "settings reject the entire action. Device braindump reports its name "
+        "and working topics.");
   } else {
     ESP_LOGW("uptime_sensor", "Unknown control action '%s'", action->valuestring);
     result = ESP_ERR_INVALID_ARG;
@@ -147,4 +148,15 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
 
 esp_err_t uptime_sensor_config_to_json(json_gen_str_t *json) {
   return json != NULL ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t uptime_sensor_working_topics_json_add(json_gen_str_t *json) {
+  const uptime_sensor_config_t *configuration = uptime_sensor_config();
+  if (json == NULL || configuration == NULL ||
+      configuration->sensor_topic[0] == '\0') {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return json_gen_arr_set_string(json, configuration->sensor_topic) == 0
+             ? ESP_OK
+             : ESP_FAIL;
 }

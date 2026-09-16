@@ -19,6 +19,7 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | `esp_err_t <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
 | `esp_err_t <prefix>_start(void)` | Start the configured provider; repeated calls must be safe. Clean up partial startup on failure. |
 | `esp_err_t <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and return a serialization error on failure. |
+| `esp_err_t <prefix>_working_topics_json_add(json_gen_str_t *)` | Append the provider's normal post-start publication topics to an open JSON array. Do not include common control-reply topics. Return a serialization error on failure. |
 | `esp_err_t <prefix>_control_action(const char *, int)` | Parse and handle MQTT commands for this provider. The payload is not NUL-terminated. Return `ESP_OK` only when the action was accepted; otherwise return the reason for rejection. |
 
 The registry owns copies of names, model types and configuration snapshots, so
@@ -83,9 +84,11 @@ returns device state on `control_reply/<device>`, while
 `control_reply/<device>/<component>`. The component is the boot-session number
 until `configure` attaches a name, then that configured name. A default-started
 sensor has no configured name, but its reply still carries its type and
-configuration. Device replies
-include `runtime.active_sensors`, containing the numeric identifiers of sensors
-whose `start()` call succeeded.
+configuration. Device replies include `runtime.active_sensors`, with one object
+per successfully started sensor. Its `name` is the current control/reply topic
+level (the boot number until configured, then the configured name), and
+`working_topics` lists normal telemetry topics that the provider may publish
+after startup. It deliberately excludes common control-reply topics.
 
 The device action `{"action":"providers"}` publishes every compiled-in
 provider and its supported model types to `control_reply/<device>`, regardless

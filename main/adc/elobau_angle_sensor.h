@@ -66,6 +66,10 @@ esp_err_t angle_sensor_config_restore(const void *configuration);
 /** Append provider settings (excluding name/type) to an open JSON object. */
 esp_err_t angle_sensor_config_to_json(json_gen_str_t *json);
 
+/** Append normal post-start publication topics to an open JSON array. Control
+ * replies are common MQTT routing and are deliberately not listed here. */
+esp_err_t angle_sensor_working_topics_json_add(json_gen_str_t *json);
+
 /** Handle a control payload received on this provider's MQTT topic.
  * Returns ESP_OK when handled, otherwise an error describing rejection. */
 esp_err_t angle_sensor_control_action(const char *payload, int payload_length);

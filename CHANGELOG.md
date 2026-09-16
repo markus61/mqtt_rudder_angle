@@ -23,6 +23,8 @@ All notable changes to ManT1S Angle are documented in this file.
   level: 1-63 ASCII letters, digits, `_`, and `-`.
 - Centralized sensor attachment, naming, persistence, and MQTT-topic-component
   selection in the generic sensor registry. Provider API names remain internal.
+- Made device braindumps expose each started sensor's current `name` and its
+  provider-reported `working_topics`, so named control routes are discoverable.
 
 ### Fixed
 
@@ -41,4 +43,3 @@ All notable changes to ManT1S Angle are documented in this file.
 - Updated provider help responses and the MQTT control protocol documentation.
 - Extended host registry tests for default numeric routing, safe sensor names,
   configured names, and provider renaming.
-

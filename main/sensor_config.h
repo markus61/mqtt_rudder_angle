@@ -81,7 +81,9 @@ esp_err_t sensor_provider_handle_control(const char *provider_name,
                                          const char *payload,
                                          int payload_length);
 
-/** Append the numbers of providers whose start operation succeeded. */
+/** Append one object for every successfully started provider. Each object has
+ * its current MQTT control name (a boot number until configured) and its
+ * provider-reported normal post-start publication topics. */
 bool sensor_active_providers_json_add(json_gen_str_t *json);
 
 /** Append all compiled-in providers and their supported model types. */

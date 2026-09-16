@@ -185,7 +185,7 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
         "retain their current values, while an invalid supplied setting "
         "rejects the entire action. Use "
         "calibration_check to inspect observed voltage limits, or calibrate "
-        "to apply them.");
+        "to apply them. Device braindump reports its name and working topics.");
   } else {
     char reply[256];
     json_gen_str_t generator;
@@ -468,4 +468,13 @@ esp_err_t angle_sensor_config_to_json(json_gen_str_t *json) {
                                      config->sensor_topic)
              ? ESP_OK
              : ESP_FAIL;
+}
+
+esp_err_t angle_sensor_working_topics_json_add(json_gen_str_t *json) {
+  const angle_sensor_config_t *config = angle_sensor_config_get();
+  if (json == NULL || config == NULL || config->sensor_topic[0] == '\0') {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return json_gen_arr_set_string(json, config->sensor_topic) == 0 ? ESP_OK
+                                                                    : ESP_FAIL;
 }

@@ -27,6 +27,7 @@ typedef struct {
   esp_err_t (*config_restore)(const void *configuration);
   esp_err_t (*start)(void);
   esp_err_t (*config_to_json)(json_gen_str_t *json);
+  esp_err_t (*working_topics_json_add)(json_gen_str_t *json);
   esp_err_t (*control_action)(const char *payload, int payload_length);
 } sensor_provider_t;
 
@@ -34,7 +35,8 @@ typedef struct {
   {#prefix, prefix##_can_serve_type, prefix##_supported_type_count,           \
    prefix##_supported_type, prefix##_config_get, prefix##_config_size,         \
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
-   prefix##_config_to_json, prefix##_control_action}
+   prefix##_config_to_json, prefix##_working_topics_json_add,                  \
+   prefix##_control_action}
 
 static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(angle_sensor),
@@ -76,8 +78,17 @@ bool sensor_active_providers_json_add(json_gen_str_t *json) {
     return false;
   }
   for (size_t i = 0; i < sensor_provider_count(); ++i) {
-    if (provider_is_started[i] &&
-        json_gen_arr_set_int(json, (int)provider_sensor_number[i]) != 0) {
+    if (!provider_is_started[i]) {
+      continue;
+    }
+    char name[SENSOR_CONFIG_NAME_SIZE];
+    if (!sensor_provider_control_component(providers[i].name, name,
+                                           sizeof(name)) ||
+        json_gen_start_object(json) != 0 ||
+        !json_obj_set_escaped_string(json, "name", name) ||
+        json_gen_push_array(json, "working_topics") != 0 ||
+        providers[i].working_topics_json_add(json) != ESP_OK ||
+        json_gen_pop_array(json) != 0 || json_gen_end_object(json) != 0) {
       return false;
     }
   }

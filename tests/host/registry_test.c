@@ -74,6 +74,8 @@ static bool fail_start;
         if (record == NULL) return ESP_ERR_INVALID_ARG; \
         ++restores[index]; memcpy(&values[index], record, sizeof(int)); return ESP_OK; } \
     esp_err_t prefix##_start(void) { ++starts[index]; return fail_start ? ESP_FAIL : ESP_OK; } \
+    esp_err_t prefix##_working_topics_json_add(json_gen_str_t *json) { \
+        return json_gen_arr_set_string(json, "working/" model) == 0 ? ESP_OK : ESP_FAIL; } \
     esp_err_t prefix##_control_action(const char *payload, int payload_length) { \
         (void)payload; (void)payload_length; ++control_actions[index]; return control_results[index]; } \
     esp_err_t prefix##_config_to_json(json_gen_str_t *json) { \
@@ -191,7 +193,9 @@ int main(void)
     assert(sensor_active_providers_json_add(&active_generator));
     assert(json_gen_end_array(&active_generator) == 0);
     assert(json_gen_str_end(&active_generator) > 1);
-    assert(!strcmp(json, "[1,2]"));
+    assert(!strcmp(json,
+                   "[{\"name\":\"rudder\",\"working_topics\":[\"working/model-a\"]},"
+                   "{\"name\":\"watch\",\"working_topics\":[\"working/model-b\"]}]"));
 
     size_t length = registry_providers_json_dump(json, sizeof(json));
     assert(length == strlen(json));

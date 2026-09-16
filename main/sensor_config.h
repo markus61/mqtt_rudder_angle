@@ -46,7 +46,8 @@ bool registry_provider_identity(const char *provider_name, const char **name,
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 
-/** Initialize the sensor configuration registry during boot. */
+/** Initialize persisted sensor settings and start missing providers from
+ * defaults, assigning each successful start a boot-session sensor number. */
 esp_err_t registry_init_on_boot(void);
 
 /** Configure a sensor based on an MQTT action JSON object. */
@@ -55,8 +56,11 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json);
 /** Number of compiled-in providers that expose a control channel. */
 size_t sensor_provider_count(void);
 
-/** Stable name used as the final segment of a provider control topic. */
+/** Internal provider API name. It is never exposed in an MQTT topic. */
 const char *sensor_provider_name(size_t index);
+
+/** Startup-assigned external sensor number, or zero when it did not start. */
+size_t sensor_provider_number(const char *provider_name);
 
 /** Deliver a control payload to the provider named by its control topic.
  * Returns the provider's result, or ESP_ERR_INVALID_ARG for an invalid name
@@ -65,7 +69,7 @@ esp_err_t sensor_provider_handle_control(const char *provider_name,
                                          const char *payload,
                                          int payload_length);
 
-/** Append the names of providers whose start operation succeeded. */
+/** Append the numbers of providers whose start operation succeeded. */
 bool sensor_active_providers_json_add(json_gen_str_t *json);
 
 /** Append all compiled-in providers and their supported model types. */

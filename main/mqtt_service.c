@@ -32,7 +32,7 @@ static esp_mqtt_client_handle_t mqtt_client;
 #define MQTT_READING_TOPIC_SIZE 64
 #define MQTT_READING_JSON_SIZE 128
 #define MQTT_READING_QUEUE_LENGTH 1
-#define MQTT_PROVIDER_NAME_SIZE 32
+#define MQTT_SENSOR_NUMBER_SIZE 20
 
 typedef struct {
   char topic[MQTT_READING_TOPIC_SIZE];
@@ -220,11 +220,11 @@ bool mqtt_publish(const char *topic, const char *payload, size_t payload_length,
                                  (int)payload_length, qos, retain) >= 0;
 }
 
-static bool mqtt_publish_provider(const char *topic_prefix,
-                                  const char *provider_name,
-                                  const char *payload, size_t payload_length) {
-  if (provider_name == NULL || provider_name[0] == '\0' ||
-      strlen(provider_name) >= MQTT_PROVIDER_NAME_SIZE) {
+static bool mqtt_publish_sensor(const char *topic_prefix,
+                                const char *provider_name,
+                                const char *payload, size_t payload_length) {
+  const size_t sensor_number = sensor_provider_number(provider_name);
+  if (sensor_number == 0U) {
     return false;
   }
   const char *device_name = device_config_get()->name;
@@ -232,9 +232,9 @@ static bool mqtt_publish_provider(const char *topic_prefix,
     return false;
   }
   char topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
-             MQTT_PROVIDER_NAME_SIZE];
-  const int topic_length = snprintf(topic, sizeof(topic), "%s%s/%s",
-                                    topic_prefix, device_name, provider_name);
+             MQTT_SENSOR_NUMBER_SIZE];
+  const int topic_length = snprintf(topic, sizeof(topic), "%s%s/%zu",
+                                    topic_prefix, device_name, sensor_number);
   return topic_length >= 0 && (size_t)topic_length < sizeof(topic) &&
          mqtt_publish(topic, payload, payload_length, 1, false);
 }
@@ -251,17 +251,10 @@ bool mqtt_publish_device_reply(const char *payload, size_t payload_length) {
          mqtt_publish(topic, payload, payload_length, 1, false);
 }
 
-bool mqtt_publish_provider_reply(const char *provider_name, const char *payload,
-                                 size_t payload_length) {
-  return mqtt_publish_provider("control_reply/", provider_name, payload,
-                               payload_length);
-}
-
-bool mqtt_publish_provider_control(const char *provider_name,
-                                   const char *payload,
-                                   size_t payload_length) {
-  return mqtt_publish_provider("control/", provider_name, payload,
-                               payload_length);
+bool mqtt_publish_sensor_reply(const char *provider_name, const char *payload,
+                               size_t payload_length) {
+  return mqtt_publish_sensor("control_reply/", provider_name, payload,
+                             payload_length);
 }
 
 bool mqtt_publish_telemetry(const char *topic, const char *payload,

@@ -50,7 +50,7 @@ static void publish_uptime_reply_message(const char *message) {
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
                                    (size_t)length - 1U)) {
     ESP_LOGW("uptime_sensor", "Could not publish help response");
   }
@@ -59,15 +59,17 @@ static void publish_uptime_reply_message(const char *message) {
 static void publish_uptime_braindump(void) {
   char payload[1024];
   const char *name;
-  const char *type;
-  if (!registry_provider_identity(UPTIME_SENSOR_PROVIDER_NAME, &name, &type)) {
-    ESP_LOGW("uptime_sensor", "No configured uptime sensor to publish");
-    return;
-  }
+  const char *registered_type;
+  const bool has_registered_identity = registry_provider_identity(
+      UPTIME_SENSOR_PROVIDER_NAME, &name, &registered_type);
+  const uptime_sensor_config_t *configuration = uptime_sensor_config();
+  const char *type = has_registered_identity ? registered_type
+                                              : configuration->sensor_type;
   json_gen_str_t generator;
   json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
   if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "name", name) ||
+      (has_registered_identity &&
+       !json_obj_set_escaped_string(&generator, "name", name)) ||
       !json_obj_set_escaped_string(&generator, "type", type) ||
       uptime_sensor_config_to_json(&generator) != ESP_OK ||
       json_gen_end_object(&generator) != 0) {
@@ -76,7 +78,7 @@ static void publish_uptime_braindump(void) {
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
                                    (size_t)length - 1U)) {
     ESP_LOGW("uptime_sensor", "Could not publish provider configuration");
   }

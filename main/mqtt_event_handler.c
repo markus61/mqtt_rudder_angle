@@ -26,8 +26,8 @@ static const char *TAG = "mqtt_event_handler";
 #define MQTT_CONFIGURE_REQUEST_TOPIC "config_request"
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX "config/"
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE ((sizeof(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX) + 12U))
-#define MQTT_PROVIDER_CONTROL_TOPIC_SIZE \
-    (sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U)
+#define MQTT_SENSOR_CONTROL_TOPIC_SIZE \
+    (sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 20U)
 
 typedef enum
 {
@@ -77,14 +77,13 @@ static void format_config_response_topic(char *buffer, size_t buffer_size)
     buffer[topic_length] = '\0';
 }
 
-static bool format_provider_control_topic(char *buffer, size_t buffer_size,
-                                          const char *provider_name)
+static bool format_sensor_control_topic(char *buffer, size_t buffer_size,
+                                        size_t sensor_number)
 {
     const char *device_name = device_config_get()->name;
-    const int length = snprintf(buffer, buffer_size, "control/%s/%s", device_name,
-                                provider_name);
-    return device_name[0] != '\0' && provider_name != NULL &&
-           provider_name[0] != '\0' && length >= 0 &&
+    const int length = snprintf(buffer, buffer_size, "control/%s/%zu", device_name,
+                                sensor_number);
+    return device_name[0] != '\0' && sensor_number != 0U && length >= 0 &&
            (size_t)length < buffer_size;
 }
 
@@ -129,16 +128,18 @@ static void subscribe_control_topic(esp_mqtt_client_handle_t client)
     }
     for (size_t i = 0; i < sensor_provider_count(); ++i)
     {
-        char control_topic[MQTT_PROVIDER_CONTROL_TOPIC_SIZE];
+        char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
         const char *provider_name = sensor_provider_name(i);
-        if (!format_provider_control_topic(control_topic, sizeof(control_topic),
-                                           provider_name))
+        const size_t sensor_number = sensor_provider_number(provider_name);
+        if (!format_sensor_control_topic(control_topic, sizeof(control_topic),
+                                         sensor_number))
         {
-            ESP_LOGE(TAG, "Could not format control topic for provider '%s'",
+            ESP_LOGW(TAG, "Sensor provider '%s' is not active; no control topic",
                      provider_name != NULL ? provider_name : "");
             continue;
         }
-        ESP_LOGI(TAG, "Subscribing to control topic '%s'", control_topic);
+        ESP_LOGI(TAG, "Subscribing to sensor %zu control topic '%s'", sensor_number,
+                 control_topic);
         esp_mqtt_client_subscribe(client, control_topic, 1);
     }
 }
@@ -199,10 +200,11 @@ static bool dispatch_provider_control(const char *topic, int topic_length,
 {
     for (size_t i = 0; i < sensor_provider_count(); ++i)
     {
-        char control_topic[MQTT_PROVIDER_CONTROL_TOPIC_SIZE];
+        char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
         const char *provider_name = sensor_provider_name(i);
-        if (!format_provider_control_topic(control_topic, sizeof(control_topic),
-                                           provider_name))
+        const size_t sensor_number = sensor_provider_number(provider_name);
+        if (!format_sensor_control_topic(control_topic, sizeof(control_topic),
+                                         sensor_number))
             continue;
         if ((size_t)topic_length == strlen(control_topic) &&
             strncmp(topic, control_topic, (size_t)topic_length) == 0)
@@ -210,8 +212,8 @@ static bool dispatch_provider_control(const char *topic, int topic_length,
             const esp_err_t err = sensor_provider_handle_control(
                 provider_name, payload, payload_length);
             if (err != ESP_OK)
-                ESP_LOGW(TAG, "Provider '%s' rejected control action: %s",
-                         provider_name, esp_err_to_name(err));
+                ESP_LOGW(TAG, "Sensor %zu rejected control action: %s",
+                         sensor_number, esp_err_to_name(err));
             return true;
         }
     }

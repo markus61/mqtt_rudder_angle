@@ -7,6 +7,7 @@
 #include "elobau_angle_sensor.h"
 #include "esp_log.h"
 #include "json_utils.h"
+#include "nvs.h"
 #include "registry_read_write.h"
 #include "uptime_sensor.h"
 
@@ -39,6 +40,8 @@ static const sensor_provider_t providers[] = {
     SENSOR_PROVIDER(uptime_sensor),
 };
 static bool provider_is_started[sizeof(providers) / sizeof(providers[0])];
+static size_t provider_sensor_number[sizeof(providers) / sizeof(providers[0])];
+static size_t next_sensor_number;
 
 static const char *TAG = "sensor_config";
 static registry_t *active_lookup;
@@ -51,6 +54,18 @@ const char *sensor_provider_name(size_t index) {
   return index < sensor_provider_count() ? providers[index].name : NULL;
 }
 
+size_t sensor_provider_number(const char *provider_name) {
+  if (provider_name == NULL) {
+    return 0U;
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (strcmp(provider_name, providers[i].name) == 0) {
+      return provider_sensor_number[i];
+    }
+  }
+  return 0U;
+}
+
 static size_t provider_index(const sensor_provider_t *provider) {
   return (size_t)(provider - providers);
 }
@@ -61,7 +76,7 @@ bool sensor_active_providers_json_add(json_gen_str_t *json) {
   }
   for (size_t i = 0; i < sensor_provider_count(); ++i) {
     if (provider_is_started[i] &&
-        json_gen_arr_set_string(json, providers[i].name) != 0) {
+        json_gen_arr_set_int(json, (int)provider_sensor_number[i]) != 0) {
       return false;
     }
   }
@@ -245,14 +260,20 @@ esp_err_t registry_init_on_boot(void) {
     return ESP_OK;
   }
   memset(provider_is_started, 0, sizeof(provider_is_started));
+  memset(provider_sensor_number, 0, sizeof(provider_sensor_number));
+  next_sensor_number = 0U;
   active_lookup = registry_init();
   esp_err_t err = registry_read(active_lookup);
-  if (err != ESP_OK) {
+  if (err == ESP_ERR_NVS_NOT_FOUND) {
+    /* No registry is normal: every provider below starts from its defaults. */
+    err = ESP_OK;
+  } else if (err != ESP_OK) {
     return err;
   }
 
   /* Check routing and binary layout for every record before touching any
    * provider. Persisted settings bypass MQTT validation/configure(). */
+  bool provider_has_snapshot[sizeof(providers) / sizeof(providers[0])] = {0};
   for (size_t i = 0; i < active_lookup->count; ++i) {
     const feature_entry_t *entry = active_lookup->configurations[i];
     const sensor_provider_t *provider = provider_for_type(entry->type);
@@ -263,6 +284,7 @@ esp_err_t registry_init_on_boot(void) {
       registry_clear(active_lookup);
       return ESP_ERR_INVALID_STATE;
     }
+    provider_has_snapshot[provider_index(provider)] = true;
     for (size_t j = 0; j < i; ++j) {
       if (provider_for_type(active_lookup->configurations[j]->type) ==
           provider) {
@@ -273,6 +295,8 @@ esp_err_t registry_init_on_boot(void) {
   }
 
   esp_err_t result = ESP_OK;
+  /* Persisted records retain their stored order, which defines their sensor
+   * numbers. Providers missing from NVS start with defaults afterwards. */
   for (size_t i = 0; i < active_lookup->count; ++i) {
     const feature_entry_t *entry = active_lookup->configurations[i];
     const sensor_provider_t *provider = provider_for_type(entry->type);
@@ -290,6 +314,21 @@ esp_err_t registry_init_on_boot(void) {
       result = err;
     } else {
       provider_is_started[provider_index(provider)] = true;
+      provider_sensor_number[provider_index(provider)] = ++next_sensor_number;
+    }
+  }
+  for (size_t i = 0; i < sensor_provider_count(); ++i) {
+    if (provider_has_snapshot[i]) {
+      continue;
+    }
+    err = providers[i].start();
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Could not start default '%s': %s", providers[i].name,
+               esp_err_to_name(err));
+      result = err;
+    } else {
+      provider_is_started[i] = true;
+      provider_sensor_number[i] = ++next_sensor_number;
     }
   }
   return result;
@@ -353,7 +392,11 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
     registry_entry_free(candidate);
     return restore_err != ESP_OK ? restore_err : err;
   }
-  provider_is_started[provider_index(provider)] = true;
+  const size_t provider_index_value = provider_index(provider);
+  provider_is_started[provider_index_value] = true;
+  if (provider_sensor_number[provider_index_value] == 0U) {
+    provider_sensor_number[provider_index_value] = ++next_sensor_number;
+  }
 
   memcpy(candidate->configuration, provider->config_get(), size);
   feature_entry_t *previous =

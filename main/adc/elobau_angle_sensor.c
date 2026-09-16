@@ -60,7 +60,7 @@ static void publish_angle_reply_message(const char *message) {
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
                                    (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish help response");
   }
@@ -69,15 +69,16 @@ static void publish_angle_reply_message(const char *message) {
 static void publish_angle_braindump(void) {
   char payload[1024];
   const char *name;
-  const char *type;
-  if (!registry_provider_identity(ANGLE_SENSOR_PROVIDER_NAME, &name, &type)) {
-    ESP_LOGW(TAG, "No configured angle sensor to publish");
-    return;
-  }
+  const char *registered_type;
+  const bool has_registered_identity = registry_provider_identity(
+      ANGLE_SENSOR_PROVIDER_NAME, &name, &registered_type);
+  const angle_sensor_config_t *config = angle_sensor_config_get();
+  const char *type = has_registered_identity ? registered_type : config->sensor_type;
   json_gen_str_t generator;
   json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
   if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "name", name) ||
+      (has_registered_identity &&
+       !json_obj_set_escaped_string(&generator, "name", name)) ||
       !json_obj_set_escaped_string(&generator, "type", type) ||
       angle_sensor_config_to_json(&generator) != ESP_OK ||
       json_gen_end_object(&generator) != 0) {
@@ -86,7 +87,7 @@ static void publish_angle_braindump(void) {
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
                                    (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish provider configuration");
   }
@@ -105,7 +106,7 @@ static void publish_angle_calibration(const char *field, int value) {
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_control(ANGLE_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
                                      (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish calibration response");
   }
@@ -130,7 +131,7 @@ static void publish_angle_calibration_check(bool calibration_required,
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+      !mqtt_publish_sensor_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
                                    (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish calibration-check response");
   }
@@ -206,7 +207,7 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
     } else {
       const int length = json_gen_str_end(&generator);
       if (length <= 1 || (size_t)length > sizeof(reply) ||
-          !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, reply,
+          !mqtt_publish_sensor_reply(ANGLE_SENSOR_PROVIDER_NAME, reply,
                                        (size_t)length - 1U)) {
         ESP_LOGW(TAG, "Could not publish unknown-action response");
       }

@@ -35,8 +35,10 @@ attachments (`REGISTRY_INITIAL_CAPACITY`).
 At boot, NVS reconstructs owned records into an empty registry. After checking
 record framing, provider availability, uniqueness and binary sizes, the registry
 restores and starts the attached providers. It never invokes `configure()` on
-NVS data. A missing NVS record leaves an empty registry. An unreadable or
-unsupported snapshot is reported; NVS is not erased, and MQTT can configure anew.
+NVS data. A provider absent from the NVS record starts with its provider-owned
+default configuration; defaults are runtime state and are not written to NVS.
+An unreadable or unsupported snapshot is reported; NVS is not erased, and MQTT
+can configure anew.
 The existing version-1 record layout is retained. Old records whose type was a
 category (`angle`) instead of a supported model require MQTT reconfiguration;
 there is no guessed conversion of provider data in the registry.
@@ -49,35 +51,40 @@ API has no stop operation to undo a successful startup. Provider tasks retain
 responsibility for applying changes to running hardware and their timing.
 
 Boot precedes MQTT; provider control operations run on the MQTT event task. They
-must remain serialized. Every compiled-in provider gets its own topic:
-`control/<device_name>/<provider_name>`, where `provider_name` is its API
-prefix (for example `angle_sensor` or `uptime_sensor`). The MQTT layer routes
-only by topic; providers parse their own actions. Configuration snapshots avoid reading live
-provider fields during JSON output, but providers remain responsible for safe
-access to live settings from their own tasks.
+must remain serialized. Successfully started sensors are assigned consecutive
+numbers for that boot: persisted records keep their stored order, then providers
+absent from NVS start from defaults in catalogue order. Sensor `1` therefore uses
+`control/<device_name>/1` and replies on `control_reply/<device_name>/1`.
+Providers that fail to start receive no number or control subscription. Provider
+API prefixes such as `angle_sensor` are internal and never appear in MQTT topics.
+Configuration snapshots avoid reading live provider fields during JSON output,
+but providers remain responsible for safe access to live settings from their own
+tasks.
 
 `device_name` is a single MQTT topic level. Configure `your_name` with 1-63
 ASCII letters, digits, `_`, or `-`; separators, MQTT wildcards, whitespace, and
 non-ASCII characters are rejected.
 
 `reset` is a device action: publish `{"action":"reset"}` to
-`control/<device>` to restart the device. Provider topics never reset the
-device. The current providers retain the existing `configure_feature` and
-`braindump` actions. A `configure_feature` request must use the matching
-provider topic and a type that provider serves.
+`control/<device>` to restart the device. Sensor topics never reset the device.
+The current providers retain the existing `configure_feature` and `braindump`
+actions. A `configure_feature` request must use the sensor topic for the
+provider that serves its type.
 
 A `braindump` reply is symmetric with its request topic. `control/<device>`
 returns device state on `control_reply/<device>`, while
-`control/<device>/<provider>` returns only that provider's attached
-configuration on `control_reply/<device>/<provider>`.
-Device replies include `runtime.active_sensors`, containing the API names of
-providers whose `start()` call succeeded.
+`control/<device>/<number>` returns only that sensor's configuration on
+`control_reply/<device>/<number>`. A default-started sensor has no configured
+name, but its reply still carries its type and configuration. Device replies
+include `runtime.active_sensors`, containing the numeric identifiers of sensors
+whose `start()` call succeeded.
 
 The device action `{"action":"providers"}` publishes every compiled-in
 provider and its supported model types to `control_reply/<device>`, regardless
 of its configuration or startup state.
 
-Example uptime action (published to `control/<device_name>/uptime_sensor`):
+Example uptime action (published to `control/<device_name>/2` when the angle
+sensor and uptime provider both start successfully):
 
 ```json
 {"action":"configure_feature","name":"device_uptime","type":"dummy_uptime","interval":60,"sensor_topic":"sensors/uptime"}

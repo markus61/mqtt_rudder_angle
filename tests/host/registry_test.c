@@ -104,10 +104,13 @@ static void reboot(void)
 
 int main(void)
 {
-    assert(registry_init_on_boot() == ESP_ERR_NVS_NOT_FOUND);
-    assert(active_lookup->count == 0 && starts[0] == 0 && starts[1] == 0);
+    assert(registry_init_on_boot() == ESP_OK);
+    assert(active_lookup->count == 0 && starts[0] == 1 && starts[1] == 1);
     assert(sensor_provider_count() == 2);
     assert(!strcmp(sensor_provider_name(0), "angle_sensor"));
+    assert(sensor_provider_number("angle_sensor") == 1);
+    assert(sensor_provider_number("uptime_sensor") == 2);
+    assert(sensor_provider_number("missing") == 0);
     assert(sensor_provider_handle_control("uptime_sensor", "{}", 2) == ESP_OK);
     assert(control_actions[1] == 1);
     control_results[1] = ESP_FAIL;
@@ -172,7 +175,7 @@ int main(void)
     assert(sensor_active_providers_json_add(&active_generator));
     assert(json_gen_end_array(&active_generator) == 0);
     assert(json_gen_str_end(&active_generator) > 1);
-    assert(!strcmp(json, "[\"angle_sensor\",\"uptime_sensor\"]"));
+    assert(!strcmp(json, "[1,2]"));
 
     size_t length = registry_providers_json_dump(json, sizeof(json));
     assert(length == strlen(json));

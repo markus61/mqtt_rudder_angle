@@ -164,7 +164,11 @@ static bool dispatch_device_control(const char *topic, int topic_length,
     }
     else if (strcasecmp(action->valuestring, "providers") == 0)
     {
-        mqtt_publish_available_providers();
+        char payload[512];
+        const size_t length = sensor_available_providers_json_dump(
+            payload, sizeof(payload));
+        if (length == 0U || !mqtt_publish_device_reply(payload, length))
+            ESP_LOGW(TAG, "Could not publish provider catalogue");
     }
     else if (strcasecmp(action->valuestring, "nvs_write") == 0)
     {

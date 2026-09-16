@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "esp_err.h"
 
@@ -25,48 +26,43 @@ extern "C" {
 esp_err_t init_mqtt(void);
 
 /**
- * @brief Publish one named reading as a JSON document.
+ * @brief Queue an already-encoded telemetry document for publication.
  *
- * The payload carries the current time and the supplied value. The call is
- * non-blocking: it replaces any unsent telemetry with this latest value. A
- * dedicated task sends it at QoS 0, where network I/O is permitted to block.
+ * The call is non-blocking: it replaces any unsent telemetry with this latest
+ * value. A dedicated task sends it at QoS 0, where network I/O is permitted
+ * to block. Providers own their telemetry JSON schema.
  *
  * @param topic Topic to publish on.
- * @param value_name JSON key for the reading value.
- * @param value Reading value.
+ * @param payload Complete JSON payload.
+ * @param payload_length Payload length, excluding its terminating null byte.
  * @return true when the reading replaced the pending telemetry value, false
  *         while the client is disconnected or the telemetry task is absent. A
  *         false return means the caller should keep the reading as unpublished.
  */
-bool mqtt_publish_reading(const char *topic, const char *value_name,
-                          float value);
+bool mqtt_publish_telemetry(const char *topic, const char *payload,
+                            size_t payload_length);
+
+/** Publish an opaque payload immediately. MQTT owns no payload schemas. */
+bool mqtt_publish(const char *topic, const char *payload, size_t payload_length,
+                  int qos, bool retain);
+
+/** Publish an opaque payload on the device's control-reply topic. */
+bool mqtt_publish_device_reply(const char *payload, size_t payload_length);
+
+/** Publish an opaque provider payload on its control-reply topic. */
+bool mqtt_publish_provider_reply(const char *provider_name, const char *payload,
+                                 size_t payload_length);
+
+/** Publish an opaque provider payload on its control topic. */
+bool mqtt_publish_provider_control(const char *provider_name,
+                                   const char *payload,
+                                   size_t payload_length);
 
 /** Publish device-specific state to control_reply/<device_name>. */
 void mqtt_publish_device_braindump(void);
 
 /** Publish the result of a device-configuration NVS write. */
 void mqtt_publish_device_nvs_write_result(bool success);
-
-/** Publish one provider's configuration to its symmetric control-reply topic. */
-void mqtt_publish_provider_braindump(const char *provider_name);
-
-/** Publish a provider-scoped human-readable message on its reply topic. */
-void mqtt_publish_provider_message(const char *provider_name,
-                                   const char *message);
-
-/** Publish a provider calibration update on control/<device>/<provider>. */
-void mqtt_publish_provider_calibration(const char *provider_name,
-                                       const char *config_value,
-                                       int replacement_value);
-
-/** Publish observed calibration state on control_reply/<device>/<provider>. */
-void mqtt_publish_provider_calibration_check(const char *provider_name,
-                                             bool calibration_required,
-                                             int calibration_min_value,
-                                             int calibration_max_value);
-
-/** Publish all compiled-in providers and their supported types. */
-void mqtt_publish_available_providers(void);
 
 #ifdef __cplusplus
 }

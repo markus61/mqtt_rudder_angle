@@ -92,6 +92,24 @@ bool sensor_available_providers_json_add(json_gen_str_t *json) {
   return true;
 }
 
+size_t sensor_available_providers_json_dump(char *buffer, size_t buffer_size) {
+  if (buffer == NULL || buffer_size < 3U || buffer_size > INT_MAX) {
+    return 0U;
+  }
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, buffer, (int)buffer_size, NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      json_gen_push_array(&generator, "providers") != 0 ||
+      !sensor_available_providers_json_add(&generator) ||
+      json_gen_pop_array(&generator) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    return 0U;
+  }
+  const int length = json_gen_str_end(&generator);
+  return length <= 1 || (size_t)length > buffer_size ? 0U
+                                                      : (size_t)length - 1U;
+}
+
 bool sensor_provider_handle_control(const char *provider_name,
                                     const char *payload, int payload_length) {
   if (provider_name == NULL || payload == NULL || payload_length < 0) {
@@ -202,6 +220,24 @@ size_t registry_provider_json_dump(const char *provider_name, char *buffer,
   const int length = json_gen_str_end(&generator);
   return length <= 1 || (size_t)length > buffer_size ? 0U
                                                        : (size_t)length - 1U;
+}
+
+bool registry_provider_identity(const char *provider_name, const char **name,
+                                const char **type) {
+  const sensor_provider_t *provider = provider_for_name(provider_name);
+  if (provider == NULL || name == NULL || type == NULL) {
+    return false;
+  }
+  for (size_t i = 0; active_lookup != NULL && i < active_lookup->count; ++i) {
+    const feature_entry_t *entry = active_lookup->configurations[i];
+    if (provider_for_type(entry->type) == provider &&
+        entry->configuration_size == provider->config_size()) {
+      *name = entry->name;
+      *type = entry->type;
+      return true;
+    }
+  }
+  return false;
 }
 
 esp_err_t registry_init_on_boot(void) {

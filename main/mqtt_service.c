@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <limits.h>
 
 #include "device_config.h"
 #include "esp_app_desc.h"
@@ -31,6 +32,7 @@ static esp_mqtt_client_handle_t mqtt_client;
 #define MQTT_READING_TOPIC_SIZE 64
 #define MQTT_READING_JSON_SIZE 128
 #define MQTT_READING_QUEUE_LENGTH 1
+#define MQTT_PROVIDER_NAME_SIZE 32
 
 typedef struct {
   char topic[MQTT_READING_TOPIC_SIZE];
@@ -205,266 +207,81 @@ void mqtt_publish_device_nvs_write_result(bool success) {
   }
 }
 
-void mqtt_publish_provider_braindump(const char *provider_name) {
+bool mqtt_publish(const char *topic, const char *payload, size_t payload_length,
+                  int qos, bool retain) {
   if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG,
-             "Cannot publish provider braindump while MQTT is disconnected");
-    return;
+    return false;
   }
-  const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL ||
-      provider_name[0] == '\0') {
-    ESP_LOGW(
-        TAG,
-        "Cannot publish provider braindump without a device and provider name");
-    return;
+  if (topic == NULL || topic[0] == '\0' || payload == NULL ||
+      payload_length > INT_MAX) {
+    return false;
   }
-
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
-                   32U];
-  const int topic_length =
-      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
-               device_name, provider_name);
-  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
-    ESP_LOGE(TAG, "Provider braindump reply topic is too long");
-    return;
-  }
-
-  char configuration_json[1024];
-  const size_t configuration_length = registry_provider_json_dump(
-      provider_name, configuration_json, sizeof(configuration_json));
-  if (configuration_length == 0U) {
-    ESP_LOGE(TAG, "Could not encode configuration for provider '%s'",
-             provider_name);
-    return;
-  }
-  if (esp_mqtt_client_publish(mqtt_client, reply_topic, configuration_json,
-                              (int)configuration_length, 1, 0) < 0) {
-    ESP_LOGW(TAG, "Failed to publish provider braindump to '%s'", reply_topic);
-  }
+  return esp_mqtt_client_publish(mqtt_client, topic, payload,
+                                 (int)payload_length, qos, retain) >= 0;
 }
 
-void mqtt_publish_provider_message(const char *provider_name,
-                                   const char *message) {
-  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG, "Cannot publish provider message while MQTT is disconnected");
-    return;
-  }
-  const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL ||
-      provider_name[0] == '\0' || message == NULL) {
-    ESP_LOGW(
-        TAG,
-        "Cannot publish provider message without device, provider, and text");
-    return;
-  }
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
-                   32U];
-  const int topic_length =
-      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
-               device_name, provider_name);
-  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
-    ESP_LOGE(TAG, "Provider message reply topic is too long");
-    return;
-  }
-
-  char reply_json[512];
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, reply_json, sizeof(reply_json), NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "message", message) ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGE(TAG, "Provider message is too large");
-    return;
-  }
-  const int reply_length = json_gen_str_end(&generator);
-  if (reply_length <= 1 || (size_t)reply_length > sizeof(reply_json)) {
-    ESP_LOGE(TAG, "Provider message is too large");
-    return;
-  }
-  if (esp_mqtt_client_publish(mqtt_client, reply_topic, reply_json,
-                              reply_length - 1, 1, 0) < 0) {
-    ESP_LOGW(TAG, "Failed to publish provider message to '%s'", reply_topic);
-  }
-}
-
-void mqtt_publish_provider_calibration(const char *provider_name,
-                                       const char *config_value,
-                                       int replacement_value) {
-  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG, "Cannot publish calibration while MQTT is disconnected");
-    return;
-  }
-  const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL ||
-      provider_name[0] == '\0' || config_value == NULL ||
-      config_value[0] == '\0') {
-    ESP_LOGW(TAG,
-             "Cannot publish calibration without device, provider, and value");
-    return;
-  }
-
-  char control_topic[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 32U];
-  const int topic_length =
-      snprintf(control_topic, sizeof(control_topic), "control/%s/%s",
-               device_name, provider_name);
-  if (topic_length < 0 || (size_t)topic_length >= sizeof(control_topic)) {
-    ESP_LOGE(TAG, "Provider calibration control topic is too long");
-    return;
-  }
-
-  char calibration_json[128];
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, calibration_json, sizeof(calibration_json),
-                     NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "action", "calibration") ||
-      json_gen_obj_set_int(&generator, config_value, replacement_value) != 0 ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGE(TAG, "Provider calibration message is too large");
-    return;
-  }
-  const int message_length = json_gen_str_end(&generator);
-  if (message_length <= 1 ||
-      (size_t)message_length > sizeof(calibration_json)) {
-    ESP_LOGE(TAG, "Provider calibration message is too large");
-    return;
-  }
-  if (esp_mqtt_client_publish(mqtt_client, control_topic, calibration_json,
-                              message_length - 1, 1, 0) < 0) {
-    ESP_LOGW(TAG, "Failed to publish calibration to '%s'", control_topic);
-  }
-}
-
-void mqtt_publish_provider_calibration_check(const char *provider_name,
-                                             bool calibration_required,
-                                             int calibration_min_value,
-                                             int calibration_max_value) {
-  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG,
-             "Cannot publish calibration check while MQTT is disconnected");
-    return;
-  }
-  const char *device_name = device_config_get()->name;
-  if (device_name[0] == '\0' || provider_name == NULL ||
-      provider_name[0] == '\0') {
-    ESP_LOGW(TAG,
-             "Cannot publish calibration check without device and provider");
-    return;
-  }
-
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
-                   32U];
-  const int topic_length =
-      snprintf(reply_topic, sizeof(reply_topic), "control_reply/%s/%s",
-               device_name, provider_name);
-  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
-    ESP_LOGE(TAG, "Provider calibration-check reply topic is too long");
-    return;
-  }
-
-  char reply_json[160];
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, reply_json, sizeof(reply_json), NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      json_gen_obj_set_bool(&generator, "calibration_required",
-                            calibration_required) != 0 ||
-      json_gen_obj_set_int(&generator, "calibration_min_value",
-                           calibration_min_value) != 0 ||
-      json_gen_obj_set_int(&generator, "calibration_max_value",
-                           calibration_max_value) != 0 ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGE(TAG, "Provider calibration-check reply is too large");
-    return;
-  }
-  const int reply_length = json_gen_str_end(&generator);
-  if (reply_length <= 1 || (size_t)reply_length > sizeof(reply_json)) {
-    ESP_LOGE(TAG, "Provider calibration-check reply is too large");
-    return;
-  }
-  if (esp_mqtt_client_publish(mqtt_client, reply_topic, reply_json,
-                              reply_length - 1, 1, 0) < 0) {
-    ESP_LOGW(TAG, "Failed to publish calibration check to '%s'", reply_topic);
-  }
-}
-
-void mqtt_publish_available_providers(void) {
-  if (mqtt_client == NULL || !mqtt_event_handler_is_connected()) {
-    ESP_LOGW(TAG,
-             "Cannot publish provider catalogue while MQTT is disconnected");
-    return;
+static bool mqtt_publish_provider(const char *topic_prefix,
+                                  const char *provider_name,
+                                  const char *payload, size_t payload_length) {
+  if (provider_name == NULL || provider_name[0] == '\0' ||
+      strlen(provider_name) >= MQTT_PROVIDER_NAME_SIZE) {
+    return false;
   }
   const char *device_name = device_config_get()->name;
   if (device_name[0] == '\0') {
-    ESP_LOGW(TAG, "Cannot publish provider catalogue without a device name");
-    return;
+    return false;
   }
-  char reply_topic[sizeof("control_reply/") + DEVICE_CONFIG_TOPIC_SIZE];
-  const int topic_length = snprintf(reply_topic, sizeof(reply_topic),
-                                    "control_reply/%s", device_name);
-  if (topic_length < 0 || (size_t)topic_length >= sizeof(reply_topic)) {
-    ESP_LOGE(TAG, "Provider catalogue reply topic is too long");
-    return;
-  }
-
-  char catalogue_json[512];
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, catalogue_json, sizeof(catalogue_json), NULL,
-                     NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      json_gen_push_array(&generator, "providers") != 0 ||
-      !sensor_available_providers_json_add(&generator) ||
-      json_gen_pop_array(&generator) != 0 ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGE(TAG, "Provider catalogue is too large");
-    return;
-  }
-  const int catalogue_length = json_gen_str_end(&generator);
-  if (catalogue_length <= 1 ||
-      (size_t)catalogue_length > sizeof(catalogue_json)) {
-    ESP_LOGE(TAG, "Provider catalogue is too large");
-    return;
-  }
-  if (esp_mqtt_client_publish(mqtt_client, reply_topic, catalogue_json,
-                              catalogue_length - 1, 1, 0) < 0) {
-    ESP_LOGW(TAG, "Failed to publish provider catalogue to '%s'", reply_topic);
-  }
+  char topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
+             MQTT_PROVIDER_NAME_SIZE];
+  const int topic_length = snprintf(topic, sizeof(topic), "%s%s/%s",
+                                    topic_prefix, device_name, provider_name);
+  return topic_length >= 0 && (size_t)topic_length < sizeof(topic) &&
+         mqtt_publish(topic, payload, payload_length, 1, false);
 }
 
-bool mqtt_publish_reading(const char *topic, const char *value_name,
-                          float value) {
+bool mqtt_publish_device_reply(const char *payload, size_t payload_length) {
+  const char *device_name = device_config_get()->name;
+  if (device_name[0] == '\0') {
+    return false;
+  }
+  char topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE];
+  const int topic_length =
+      snprintf(topic, sizeof(topic), "control_reply/%s", device_name);
+  return topic_length >= 0 && (size_t)topic_length < sizeof(topic) &&
+         mqtt_publish(topic, payload, payload_length, 1, false);
+}
+
+bool mqtt_publish_provider_reply(const char *provider_name, const char *payload,
+                                 size_t payload_length) {
+  return mqtt_publish_provider("control_reply/", provider_name, payload,
+                               payload_length);
+}
+
+bool mqtt_publish_provider_control(const char *provider_name,
+                                   const char *payload,
+                                   size_t payload_length) {
+  return mqtt_publish_provider("control/", provider_name, payload,
+                               payload_length);
+}
+
+bool mqtt_publish_telemetry(const char *topic, const char *payload,
+                            size_t payload_length) {
   if (mqtt_reading_queue == NULL || mqtt_client == NULL ||
       !mqtt_event_handler_is_connected()) {
     return false;
   }
 
-  if (topic == NULL || topic[0] == '\0' ||
-      strlen(topic) >= MQTT_READING_TOPIC_SIZE) {
+  if (topic == NULL || topic[0] == '\0' || payload == NULL ||
+      strlen(topic) >= MQTT_READING_TOPIC_SIZE ||
+      payload_length >= MQTT_READING_JSON_SIZE) {
     ESP_LOGW(TAG, "Sensor topic is invalid or too long");
     return false;
   }
 
-  time_t current_time = time(NULL);
-  struct tm utc_time = {0};
-  gmtime_r(&current_time, &utc_time);
-
-  char timestamp[32];
-  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
-
   mqtt_reading_t reading = {0};
   strlcpy(reading.topic, topic, sizeof(reading.topic));
-
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, reading.payload, sizeof(reading.payload), NULL,
-                     NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "now", timestamp) ||
-      json_gen_obj_set_float(&generator, value_name, value) != 0 ||
-      json_gen_end_object(&generator) != 0 ||
-      json_gen_str_end(&generator) <= 1) {
-    ESP_LOGW(TAG, "Sensor reading JSON is too large");
-    return false;
-  }
+  memcpy(reading.payload, payload, payload_length);
+  reading.payload[payload_length] = '\0';
 
   if (xQueueOverwrite(mqtt_reading_queue, &reading) != pdPASS) {
     ESP_LOGW(TAG, "Failed to queue latest reading for '%s'", topic);

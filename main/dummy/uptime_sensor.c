@@ -1,6 +1,7 @@
 #include "uptime_sensor.h"
 
 #include <strings.h>
+#include <time.h>
 
 #include "cJSON.h"
 #include "esp_log.h"
@@ -11,11 +12,75 @@
 #include "mqtt_service.h"
 #include "sensor_config.h"
 #include "uptime_sensor_config.h"
+#include "json_utils.h"
 
 static TaskHandle_t uptime_sensor_task_handle;
 
+#define UPTIME_SENSOR_PROVIDER_NAME "uptime_sensor"
+
 static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
-  return mqtt_publish_reading(topic, "uptime", uptime_seconds);
+  char payload[128];
+  time_t current_time = time(NULL);
+  struct tm utc_time = {0};
+  gmtime_r(&current_time, &utc_time);
+  char timestamp[32];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+      json_gen_obj_set_float(&generator, "uptime", uptime_seconds) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    return false;
+  }
+  const int length = json_gen_str_end(&generator);
+  return length > 1 && (size_t)length <= sizeof(payload) &&
+         mqtt_publish_telemetry(topic, payload, (size_t)length - 1U);
+}
+
+static void publish_uptime_reply_message(const char *message) {
+  char payload[512];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "message", message) ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW("uptime_sensor", "Help response is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
+                                   (size_t)length - 1U)) {
+    ESP_LOGW("uptime_sensor", "Could not publish help response");
+  }
+}
+
+static void publish_uptime_braindump(void) {
+  char payload[1024];
+  const char *name;
+  const char *type;
+  if (!registry_provider_identity(UPTIME_SENSOR_PROVIDER_NAME, &name, &type)) {
+    ESP_LOGW("uptime_sensor", "No configured uptime sensor to publish");
+    return;
+  }
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "name", name) ||
+      !json_obj_set_escaped_string(&generator, "type", type) ||
+      !uptime_sensor_config_to_json(&generator) ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW("uptime_sensor", "Provider configuration is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
+                                   (size_t)length - 1U)) {
+    ESP_LOGW("uptime_sensor", "Could not publish provider configuration");
+  }
 }
 
 static void uptime_sensor_task(void *task_argument) {
@@ -63,10 +128,9 @@ void uptime_sensor_control_action(const char *payload, int payload_length) {
                esp_err_to_name(err));
     }
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
-    mqtt_publish_provider_braindump("uptime_sensor");
+    publish_uptime_braindump();
   } else if (strcasecmp(action->valuestring, "help") == 0) {
-    mqtt_publish_provider_message(
-        "uptime_sensor",
+    publish_uptime_reply_message(
         "Publishes elapsed device uptime periodically. Start it with a "
         "configure_feature action using type 'dummy_uptime', a name, an "
         "interval in seconds, and an optional sensor_topic.");

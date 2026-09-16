@@ -118,6 +118,11 @@ int main(void)
     assert(json_gen_str_end(&catalogue_generator) > 1);
     assert(!strcmp(json, "[{\"name\":\"angle_sensor\",\"types\":[\"model-a\"]},"
                        "{\"name\":\"uptime_sensor\",\"types\":[\"model-b\"]}]"));
+    size_t catalogue_length =
+        sensor_available_providers_json_dump(json, sizeof(json));
+    assert(catalogue_length == strlen(json));
+    assert(!strcmp(json, "{\"providers\":[{\"name\":\"angle_sensor\",\"types\":[\"model-a\"]},"
+                       "{\"name\":\"uptime_sensor\",\"types\":[\"model-b\"]}]}"));
     assert(registry_providers_json_dump(json, sizeof(json)) == 2);
     assert(strcmp(json, "[]") == 0);
     assert(configure("unknown", "missing", 1) == ESP_ERR_INVALID_ARG);
@@ -147,6 +152,14 @@ int main(void)
     assert(cJSON_GetObjectItem(provider_dump, "value")->valueint == 60);
     cJSON_Delete(provider_dump);
     assert(registry_provider_json_dump("missing", json, sizeof(json)) == 0);
+    const char *provider_name;
+    const char *provider_type;
+    assert(registry_provider_identity("uptime_sensor", &provider_name,
+                                      &provider_type));
+    assert(!strcmp(provider_name, "clock"));
+    assert(!strcmp(provider_type, "model-b"));
+    assert(!registry_provider_identity("missing", &provider_name,
+                                       &provider_type));
 
     json_gen_str_t active_generator;
     json_gen_str_start(&active_generator, json, sizeof(json), NULL, NULL);

@@ -39,6 +39,10 @@ size_t registry_providers_json_dump(char *buffer, size_t buffer_size);
 size_t registry_provider_json_dump(const char *provider_name, char *buffer,
                                   size_t buffer_size);
 
+/** Look up the configured name and type for one provider. */
+bool registry_provider_identity(const char *provider_name, const char **name,
+                                const char **type);
+
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 
@@ -63,6 +67,9 @@ bool sensor_active_providers_json_add(json_gen_str_t *json);
 
 /** Append all compiled-in providers and their supported model types. */
 bool sensor_available_providers_json_add(json_gen_str_t *json);
+
+/** Encode the catalogue of compiled-in providers as a JSON document. */
+size_t sensor_available_providers_json_dump(char *buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }

@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <strings.h>
+#include <time.h>
 
 #include "cJSON.h"
 #include "elobau_angle_sensor_config.h"
@@ -25,8 +26,115 @@ static const char *TAG = "angle_sensor";
 static int calibration_min_millivolts = INT_MAX;
 static int calibration_max_millivolts = INT_MIN;
 
+#define ANGLE_SENSOR_PROVIDER_NAME "angle_sensor"
+
 static bool publish_angle_reading(const char *topic, float angle_degrees) {
-  return mqtt_publish_reading(topic, "angle", angle_degrees);
+  char payload[128];
+  time_t current_time = time(NULL);
+  struct tm utc_time = {0};
+  gmtime_r(&current_time, &utc_time);
+  char timestamp[32];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
+
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "now", timestamp) ||
+      json_gen_obj_set_float(&generator, "angle", angle_degrees) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    return false;
+  }
+  const int length = json_gen_str_end(&generator);
+  return length > 1 && (size_t)length <= sizeof(payload) &&
+         mqtt_publish_telemetry(topic, payload, (size_t)length - 1U);
+}
+
+static void publish_angle_reply_message(const char *message) {
+  char payload[512];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "message", message) ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW(TAG, "Help response is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+                                   (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish help response");
+  }
+}
+
+static void publish_angle_braindump(void) {
+  char payload[1024];
+  const char *name;
+  const char *type;
+  if (!registry_provider_identity(ANGLE_SENSOR_PROVIDER_NAME, &name, &type)) {
+    ESP_LOGW(TAG, "No configured angle sensor to publish");
+    return;
+  }
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "name", name) ||
+      !json_obj_set_escaped_string(&generator, "type", type) ||
+      !angle_sensor_config_to_json(&generator) ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW(TAG, "Provider configuration is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+                                   (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish provider configuration");
+  }
+}
+
+static void publish_angle_calibration(const char *field, int value) {
+  char payload[128];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "action", "calibration") ||
+      json_gen_obj_set_int(&generator, field, value) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW(TAG, "Calibration response is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_control(ANGLE_SENSOR_PROVIDER_NAME, payload,
+                                     (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish calibration response");
+  }
+}
+
+static void publish_angle_calibration_check(bool calibration_required,
+                                            int calibration_min_value,
+                                            int calibration_max_value) {
+  char payload[160];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      json_gen_obj_set_bool(&generator, "calibration_required",
+                            calibration_required) != 0 ||
+      json_gen_obj_set_int(&generator, "calibration_min_value",
+                           calibration_min_value) != 0 ||
+      json_gen_obj_set_int(&generator, "calibration_max_value",
+                           calibration_max_value) != 0 ||
+      json_gen_end_object(&generator) != 0) {
+    ESP_LOGW(TAG, "Calibration-check response is too large");
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, payload,
+                                   (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish calibration-check response");
+  }
 }
 
 void angle_sensor_control_action(const char *payload, int payload_length) {
@@ -51,28 +159,25 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
                                           calibration_max_millivolts,
                                           &minimum_replaced, &maximum_replaced);
     if (minimum_replaced) {
-      mqtt_publish_provider_calibration("angle_sensor",
-                                        "sensor_minimum_millivolts",
-                                        calibration_min_millivolts);
+      publish_angle_calibration("sensor_minimum_millivolts",
+                                calibration_min_millivolts);
     }
     if (maximum_replaced) {
-      mqtt_publish_provider_calibration("angle_sensor",
-                                        "sensor_maximum_millivolts",
-                                        calibration_max_millivolts);
+      publish_angle_calibration("sensor_maximum_millivolts",
+                                calibration_max_millivolts);
     }
   } else if (strcasecmp(action->valuestring, "calibration_check") == 0) {
     const angle_sensor_config_t *config = angle_sensor_config_get();
     const bool calibration_required =
         calibration_min_millivolts < config->sensor_minimum_millivolts ||
         calibration_max_millivolts > config->sensor_maximum_millivolts;
-    mqtt_publish_provider_calibration_check(
-        "angle_sensor", calibration_required, calibration_min_millivolts,
-        calibration_max_millivolts);
+    publish_angle_calibration_check(calibration_required,
+                                    calibration_min_millivolts,
+                                    calibration_max_millivolts);
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
-    mqtt_publish_provider_braindump("angle_sensor");
+    publish_angle_braindump();
   } else if (strcasecmp(action->valuestring, "help") == 0) {
-    mqtt_publish_provider_message(
-        "angle_sensor",
+    publish_angle_reply_message(
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Configure it with a supported Elobau type and a "
         "name; every sensor_* setting is optional, and omitted settings "
@@ -84,6 +189,30 @@ void angle_sensor_control_action(const char *payload, int payload_length) {
     esp_restart();
     return;
   } else {
+    char reply[256];
+    json_gen_str_t generator;
+    json_gen_str_start(&generator, reply, sizeof(reply), NULL, NULL);
+    if (json_gen_start_object(&generator) != 0 ||
+        !json_obj_set_escaped_string(&generator, "unknown_action",
+                                     action->valuestring) ||
+        json_gen_push_array(&generator, "available_actions") != 0 ||
+        json_gen_arr_set_string(&generator, "configure_feature") != 0 ||
+        json_gen_arr_set_string(&generator, "calibrate") != 0 ||
+        json_gen_arr_set_string(&generator, "calibration_check") != 0 ||
+        json_gen_arr_set_string(&generator, "braindump") != 0 ||
+        json_gen_arr_set_string(&generator, "help") != 0 ||
+        json_gen_arr_set_string(&generator, "reset") != 0 ||
+        json_gen_pop_array(&generator) != 0 ||
+        json_gen_end_object(&generator) != 0) {
+      ESP_LOGW(TAG, "Unknown-action response is too large");
+    } else {
+      const int length = json_gen_str_end(&generator);
+      if (length <= 1 || (size_t)length > sizeof(reply) ||
+          !mqtt_publish_provider_reply(ANGLE_SENSOR_PROVIDER_NAME, reply,
+                                       (size_t)length - 1U)) {
+        ESP_LOGW(TAG, "Could not publish unknown-action response");
+      }
+    }
     ESP_LOGW(TAG, "Unknown control action '%s'", action->valuestring);
   }
   cJSON_Delete(action_json);

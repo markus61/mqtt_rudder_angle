@@ -13,7 +13,6 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
-#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mqtt_service.h"
@@ -188,10 +187,6 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
         "rejects the entire action. Use "
         "calibration_check to inspect observed voltage limits, or calibrate "
         "to apply them.");
-  } else if (strcasecmp(action->valuestring, "reset") == 0) {
-    cJSON_Delete(action_json);
-    esp_restart();
-    return ESP_OK;
   } else {
     char reply[256];
     json_gen_str_t generator;
@@ -205,7 +200,6 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
         json_gen_arr_set_string(&generator, "calibration_check") != 0 ||
         json_gen_arr_set_string(&generator, "braindump") != 0 ||
         json_gen_arr_set_string(&generator, "help") != 0 ||
-        json_gen_arr_set_string(&generator, "reset") != 0 ||
         json_gen_pop_array(&generator) != 0 ||
         json_gen_end_object(&generator) != 0) {
       ESP_LOGW(TAG, "Unknown-action response is too large");

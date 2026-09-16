@@ -12,6 +12,7 @@
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 #include "json_generator.h"
 #include "json_utils.h"
 #include "mqtt_client.h"
@@ -177,6 +178,13 @@ static bool dispatch_device_control(const char *topic, int topic_length,
         if (err != ESP_OK)
             ESP_LOGW(TAG, "Could not store device configuration: %s",
                      esp_err_to_name(err));
+    }
+    else if (strcasecmp(action->valuestring, "reset") == 0)
+    {
+        ESP_LOGI(TAG, "Device reset requested");
+        cJSON_Delete(action_json);
+        esp_restart();
+        return true;
     }
     else
     {

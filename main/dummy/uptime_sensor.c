@@ -5,7 +5,6 @@
 
 #include "cJSON.h"
 #include "esp_log.h"
-#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -138,10 +137,6 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
         "configure_feature action using type 'dummy_uptime', a name, an "
         "interval in seconds, and an optional sensor_topic. Invalid supplied "
         "settings reject the entire action.");
-  } else if (strcasecmp(action->valuestring, "reset") == 0) {
-    cJSON_Delete(action_json);
-    esp_restart();
-    return ESP_OK;
   } else {
     ESP_LOGW("uptime_sensor", "Unknown control action '%s'", action->valuestring);
     result = ESP_ERR_INVALID_ARG;

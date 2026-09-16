@@ -60,9 +60,11 @@ access to live settings from their own tasks.
 ASCII letters, digits, `_`, or `-`; separators, MQTT wildcards, whitespace, and
 non-ASCII characters are rejected.
 
-The current providers retain the existing `configure_feature`, `braindump`, and
-`reset` actions. A `configure_feature` request must use the matching provider
-topic and a type that provider serves.
+`reset` is a device action: publish `{"action":"reset"}` to
+`control/<device>` to restart the device. Provider topics never reset the
+device. The current providers retain the existing `configure_feature` and
+`braindump` actions. A `configure_feature` request must use the matching
+provider topic and a type that provider serves.
 
 A `braindump` reply is symmetric with its request topic. `control/<device>`
 returns device state on `control_reply/<device>`, while

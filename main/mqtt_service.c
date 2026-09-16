@@ -119,7 +119,9 @@ void mqtt_publish_device_braindump(void) {
     return;
   }
 
-  char state_json[1024];
+  /* Ten instances with maximum-length names/topics exceed the old singleton-
+   * sized buffer. Static storage avoids consuming the MQTT event-task stack. */
+  static char state_json[4096];
   json_gen_str_t generator;
   json_gen_str_start(&generator, state_json, sizeof(state_json), NULL, NULL);
   if (json_gen_start_object(&generator) != 0 ||

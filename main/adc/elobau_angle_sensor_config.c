@@ -17,7 +17,7 @@ static const char *const ANGLE_SENSOR_CONFIG_TYPES[] = {
 /**
  * @brief The default configuration for the Elobau angle sensor.
  */
-static angle_sensor_config_t angle_sensor_config = {
+static const angle_sensor_config_t default_angle_sensor_config = {
     .sensor_gpio_number = 32,
     .sensor_sample_period_ms = 100,
     .sensor_samples_per_reading = 8,
@@ -47,10 +47,6 @@ static esp_err_t apply_topic(const cJSON *configuration,
 static esp_err_t apply_configuration_json(const cJSON *configuration,
                                           angle_sensor_config_t *destination);
 
-const void *angle_sensor_config_get(void) { return &angle_sensor_config; }
-
-size_t angle_sensor_config_size(void) { return sizeof(angle_sensor_config); }
-
 bool angle_sensor_can_serve_type(const char *type) {
   if (type == NULL) {
     return false;
@@ -78,50 +74,55 @@ const char *angle_sensor_supported_type(size_t index) {
              : NULL;
 }
 
-esp_err_t angle_sensor_configure(const cJSON *configuration) {
-  if (!cJSON_IsObject(configuration)) {
+bool angle_sensor_config_init(angle_sensor_config_t *configuration,
+                              const char *type) {
+  if (configuration == NULL || !angle_sensor_can_serve_type(type)) {
+    return false;
+  }
+  *configuration = default_angle_sensor_config;
+  strlcpy(configuration->sensor_type, type,
+          sizeof(configuration->sensor_type));
+  return true;
+}
+
+esp_err_t angle_sensor_config_apply_json(angle_sensor_config_t *configuration,
+                                         const cJSON *json) {
+  if (configuration == NULL || !cJSON_IsObject(json)) {
     return ESP_ERR_INVALID_ARG;
   }
   const char *type = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(configuration, "type"));
+      cJSON_GetObjectItemCaseSensitive(json, "type"));
 
-  if (type != NULL && strcmp(type, angle_sensor_config.sensor_type) != 0) {
+  if (type != NULL && strcmp(type, configuration->sensor_type) != 0) {
     return ESP_ERR_INVALID_ARG;
   }
 
   /* Validate the complete overlay against a copy, then commit once. This keeps
    * a rejected MQTT action from changing any live setting. */
-  angle_sensor_config_t candidate = angle_sensor_config;
-  esp_err_t err = apply_configuration_json(configuration, &candidate);
+  angle_sensor_config_t candidate = *configuration;
+  esp_err_t err = apply_configuration_json(json, &candidate);
   if (err != ESP_OK) {
     return err;
   }
-  angle_sensor_config = candidate;
+  *configuration = candidate;
   return ESP_OK;
 }
 
-esp_err_t angle_sensor_config_restore(const void *configuration) {
-  if (configuration == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-  memcpy(&angle_sensor_config, configuration, sizeof(angle_sensor_config));
-  return ESP_OK;
-}
-
-void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
+void angle_sensor_config_apply_calibration(angle_sensor_config_t *configuration,
+                                           int calibration_min_millivolts,
                                            int calibration_max_millivolts,
                                            bool *minimum_replaced,
                                            bool *maximum_replaced) {
-  const bool replace_minimum = calibration_min_millivolts <
-                               angle_sensor_config.sensor_minimum_millivolts;
-  const bool replace_maximum = calibration_max_millivolts >
-                               angle_sensor_config.sensor_maximum_millivolts;
+  const bool replace_minimum = configuration != NULL &&
+      calibration_min_millivolts < configuration->sensor_minimum_millivolts;
+  const bool replace_maximum = configuration != NULL &&
+      calibration_max_millivolts > configuration->sensor_maximum_millivolts;
 
   if (replace_minimum) {
-    angle_sensor_config.sensor_minimum_millivolts = calibration_min_millivolts;
+    configuration->sensor_minimum_millivolts = calibration_min_millivolts;
   }
   if (replace_maximum) {
-    angle_sensor_config.sensor_maximum_millivolts = calibration_max_millivolts;
+    configuration->sensor_maximum_millivolts = calibration_max_millivolts;
   }
   if (minimum_replaced != NULL) {
     *minimum_replaced = replace_minimum;
@@ -244,10 +245,10 @@ static esp_err_t apply_topic(const cJSON *configuration,
     return ESP_ERR_INVALID_ARG;
   }
   if (topic[0] == '\0' ||
-      strlen(topic) >= sizeof(angle_sensor_config.sensor_topic)) {
+      strlen(topic) >= sizeof(destination->sensor_topic)) {
     ESP_LOGE(TAG,
              "\"sensor_topic\" must be non-empty and at most %d characters",
-             (int)sizeof(angle_sensor_config.sensor_topic) - 1);
+             (int)sizeof(destination->sensor_topic) - 1);
     return ESP_ERR_INVALID_ARG;
   }
   strlcpy(destination->sensor_topic, topic, sizeof(destination->sensor_topic));

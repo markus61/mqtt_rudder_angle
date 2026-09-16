@@ -66,8 +66,8 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "ManT1S 10BASE-T1S bring-up");
 
-  /* Restore separate device and feature records. Providers without a stored
-   * sensor record start from their provider-owned defaults. */
+  /* Restore the complete sensor registry. With no stored registry, bootstrap
+   * one persisted numeric-name instance from every provider's defaults. */
   device_config_load_from_nvs();
   const esp_err_t registry_err = registry_init_on_boot();
   if (registry_err == ESP_ERR_INVALID_STATE) {

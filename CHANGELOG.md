@@ -2,6 +2,23 @@
 
 All notable changes to ManT1S Angle are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Added the device-scoped `add_provider` action, with required type and unique
+  name plus optional provider-specific initial settings.
+- Added independent runtime instances so multiple sensors may use the same
+  provider implementation or model type.
+
+### Changed
+
+- Persist the numeric-name default instances as a complete registry on first
+  boot; later boots create exactly the instances recorded in NVS.
+- Made provider configuration, tasks, control replies, calibration, and JSON
+  serialization instance-scoped. Angle instances share the ADC1 unit while
+  retaining their own channels and calibration state.
+
 ## 0.1.10 - 2026-09-16
 
 ### Changed

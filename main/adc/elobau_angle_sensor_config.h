@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "cJSON.h"
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,9 +28,18 @@ typedef struct {
   char sensor_type[ANGLE_SENSOR_TYPE_SIZE];
 } angle_sensor_config_t;
 
+/** Initialize one configuration from the defaults for a supported type. */
+bool angle_sensor_config_init(angle_sensor_config_t *configuration,
+                              const char *type);
+
+/** Validate and atomically apply a JSON overlay to one configuration. */
+esp_err_t angle_sensor_config_apply_json(angle_sensor_config_t *configuration,
+                                         const cJSON *json);
+
 /* Expand the configured voltage range to include observed calibration limits.
  * The replacement flags are set only for bounds that were changed. */
-void angle_sensor_config_apply_calibration(int calibration_min_millivolts,
+void angle_sensor_config_apply_calibration(angle_sensor_config_t *configuration,
+                                           int calibration_min_millivolts,
                                            int calibration_max_millivolts,
                                            bool *minimum_replaced,
                                            bool *maximum_replaced);

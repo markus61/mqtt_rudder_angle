@@ -1,24 +1,73 @@
 #include "uptime_sensor.h"
 
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <time.h>
 
-#include "cJSON.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "json_utils.h"
 #include "mqtt_service.h"
 #include "sensor_config.h"
 #include "uptime_sensor_config.h"
-#include "json_utils.h"
 
-static TaskHandle_t uptime_sensor_task_handle;
+typedef struct {
+  uptime_sensor_config_t configuration;
+  TaskHandle_t task_handle;
+} uptime_sensor_instance_t;
 
-#define UPTIME_SENSOR_PROVIDER_NAME "uptime_sensor"
+static const char *TAG = "uptime_sensor";
 
-const char *uptime_sensor_current_type(void) {
-  return uptime_sensor_config()->sensor_type;
+void *uptime_sensor_create(const char *type) {
+  uptime_sensor_instance_t *instance = calloc(1, sizeof(*instance));
+  if (instance == NULL ||
+      !uptime_sensor_config_init(&instance->configuration, type)) {
+    free(instance);
+    return NULL;
+  }
+  return instance;
+}
+
+void uptime_sensor_destroy(void *opaque) {
+  uptime_sensor_instance_t *instance = opaque;
+  if (instance != NULL && instance->task_handle != NULL) {
+    vTaskDelete(instance->task_handle);
+  }
+  free(instance);
+}
+
+const void *uptime_sensor_config_get(const void *opaque) {
+  const uptime_sensor_instance_t *instance = opaque;
+  return instance != NULL ? &instance->configuration : NULL;
+}
+
+size_t uptime_sensor_config_size(void) { return sizeof(uptime_sensor_config_t); }
+
+esp_err_t uptime_sensor_configure(void *opaque, const cJSON *configuration) {
+  uptime_sensor_instance_t *instance = opaque;
+  return instance != NULL
+             ? uptime_sensor_config_apply_json(&instance->configuration,
+                                               configuration)
+             : ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t uptime_sensor_config_restore(void *opaque,
+                                       const void *configuration) {
+  uptime_sensor_instance_t *instance = opaque;
+  if (instance == NULL || configuration == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  const uptime_sensor_config_t *record = configuration;
+  if (memchr(record->sensor_type, '\0', sizeof(record->sensor_type)) == NULL ||
+      strcmp(record->sensor_type, instance->configuration.sensor_type) != 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  memcpy(&instance->configuration, configuration,
+         sizeof(instance->configuration));
+  return ESP_OK;
 }
 
 static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
@@ -28,7 +77,6 @@ static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
   gmtime_r(&current_time, &utc_time);
   char timestamp[32];
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
-
   json_gen_str_t generator;
   json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
   if (json_gen_start_object(&generator) != 0 ||
@@ -42,125 +90,127 @@ static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
          mqtt_publish_telemetry(topic, payload, (size_t)length - 1U);
 }
 
-static void publish_uptime_reply_message(const char *message) {
-  char payload[512];
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "message", message) ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGW("uptime_sensor", "Help response is too large");
-    return;
-  }
-  const int length = json_gen_str_end(&generator);
-  if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
-                                   (size_t)length - 1U)) {
-    ESP_LOGW("uptime_sensor", "Could not publish help response");
-  }
-}
-
-static void publish_uptime_braindump(void) {
-  char payload[1024];
-  const char *name;
-  const char *registered_type;
-  const bool has_registered_identity = registry_provider_identity(
-      UPTIME_SENSOR_PROVIDER_NAME, &name, &registered_type);
-  const uptime_sensor_config_t *configuration = uptime_sensor_config();
-  const char *type = has_registered_identity ? registered_type
-                                              : configuration->sensor_type;
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      (has_registered_identity &&
-       !json_obj_set_escaped_string(&generator, "name", name)) ||
-      !json_obj_set_escaped_string(&generator, "type", type) ||
-      uptime_sensor_config_to_json(&generator) != ESP_OK ||
-      json_gen_end_object(&generator) != 0) {
-    ESP_LOGW("uptime_sensor", "Provider configuration is too large");
-    return;
-  }
-  const int length = json_gen_str_end(&generator);
-  if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(UPTIME_SENSOR_PROVIDER_NAME, payload,
-                                   (size_t)length - 1U)) {
-    ESP_LOGW("uptime_sensor", "Could not publish provider configuration");
-  }
-}
-
-static void uptime_sensor_task(void *task_argument) {
+static void uptime_sensor_task(void *argument) {
+  uptime_sensor_instance_t *instance = argument;
   TickType_t last_wake_time = xTaskGetTickCount();
-
   while (true) {
-    const uptime_sensor_config_t *configuration = uptime_sensor_config();
+    const uptime_sensor_config_t *configuration = &instance->configuration;
     const float uptime_seconds = (float)esp_timer_get_time() / 1000000.0f;
     (void)publish_uptime_reading(configuration->sensor_topic, uptime_seconds);
-
     vTaskDelayUntil(
         &last_wake_time,
         pdMS_TO_TICKS((uint32_t)configuration->interval_seconds * 1000U));
   }
 }
 
-esp_err_t uptime_sensor_start(void) {
-  if (uptime_sensor_task_handle != NULL) {
+esp_err_t uptime_sensor_start(void *opaque) {
+  uptime_sensor_instance_t *instance = opaque;
+  if (instance == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (instance->task_handle != NULL) {
     return ESP_OK;
   }
-  ESP_LOGI("uptime_sensor", "Starting uptime sensor task...");
-  if (xTaskCreate(uptime_sensor_task, "uptime_sensor", 3072, NULL, 5,
-                  &uptime_sensor_task_handle) != pdPASS) {
+  if (xTaskCreate(uptime_sensor_task, "uptime_sensor", 3072, instance, 5,
+                  &instance->task_handle) != pdPASS) {
     return ESP_ERR_NO_MEM;
   }
-
   return ESP_OK;
 }
 
-/** Parse and dispatch an MQTT control-action JSON payload. */
-esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) {
+static bool publish_reply(const char *name, const char *payload,
+                          size_t length) {
+  return mqtt_publish_sensor_reply(name, payload, length);
+}
+
+static void publish_message(const char *name, const char *message) {
+  char payload[512];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "message", message) ||
+      json_gen_end_object(&generator) != 0) {
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !publish_reply(name, payload, (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish help response");
+  }
+}
+
+static void publish_braindump(const uptime_sensor_instance_t *instance,
+                              const char *name) {
+  char payload[1024];
+  json_gen_str_t generator;
+  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
+  if (json_gen_start_object(&generator) != 0 ||
+      !json_obj_set_escaped_string(&generator, "name", name) ||
+      !json_obj_set_escaped_string(&generator, "type",
+                                   instance->configuration.sensor_type) ||
+      uptime_sensor_config_to_json(instance, &generator) != ESP_OK ||
+      json_gen_end_object(&generator) != 0) {
+    return;
+  }
+  const int length = json_gen_str_end(&generator);
+  if (length <= 1 || (size_t)length > sizeof(payload) ||
+      !publish_reply(name, payload, (size_t)length - 1U)) {
+    ESP_LOGW(TAG, "Could not publish provider configuration");
+  }
+}
+
+esp_err_t uptime_sensor_control_action(void *opaque, const char *instance_name,
+                                       const char *payload,
+                                       int payload_length) {
+  uptime_sensor_instance_t *instance = opaque;
+  if (instance == NULL || instance_name == NULL || payload == NULL ||
+      payload_length < 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
   esp_err_t result = ESP_OK;
-  cJSON *action_json = cJSON_ParseWithLength(payload, (size_t)payload_length);
-  const cJSON *action = cJSON_GetObjectItemCaseSensitive(action_json, "action");
-  if (!cJSON_IsObject(action_json) || !cJSON_IsString(action) ||
+  cJSON *json = cJSON_ParseWithLength(payload, (size_t)payload_length);
+  const cJSON *action = cJSON_GetObjectItemCaseSensitive(json, "action");
+  if (!cJSON_IsObject(json) || !cJSON_IsString(action) ||
       action->valuestring == NULL) {
-    ESP_LOGW("uptime_sensor", "Control payload must contain a string action");
     result = ESP_ERR_INVALID_ARG;
   } else if (strcasecmp(action->valuestring, "configure") == 0) {
-    const esp_err_t err = sensor_provider_configure_from_mqtt(
-        UPTIME_SENSOR_PROVIDER_NAME, action_json);
-    if (err != ESP_OK) {
-      ESP_LOGW("uptime_sensor", "Could not configure sensor: %s",
-               esp_err_to_name(err));
-    }
-    result = err;
+    result = sensor_provider_configure_from_mqtt(instance_name, json);
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
-    publish_uptime_braindump();
+    publish_braindump(instance, instance_name);
   } else if (strcasecmp(action->valuestring, "help") == 0) {
-    publish_uptime_reply_message(
-        "Publishes elapsed device uptime periodically. Start it with a "
-        "configure action using a safe name, an optional interval in seconds, "
-        "and an optional sensor_topic. It moves control and "
-        "replies from the sensor number to that name. Invalid supplied "
-        "settings reject the entire action. Device braindump reports its name "
-        "and working topics.");
+    publish_message(instance_name,
+                    "Publishes elapsed device uptime periodically. Configure "
+                    "it with a unique safe name, an optional interval, and an "
+                    "optional sensor_topic.");
   } else {
-    ESP_LOGW("uptime_sensor", "Unknown control action '%s'", action->valuestring);
     result = ESP_ERR_INVALID_ARG;
   }
-  cJSON_Delete(action_json);
+  cJSON_Delete(json);
   return result;
 }
 
-esp_err_t uptime_sensor_config_to_json(json_gen_str_t *json) {
-  return json != NULL ? ESP_OK : ESP_ERR_INVALID_ARG;
-}
-
-esp_err_t uptime_sensor_working_topics_json_add(json_gen_str_t *json) {
-  const uptime_sensor_config_t *configuration = uptime_sensor_config();
-  if (json == NULL || configuration == NULL ||
-      configuration->sensor_topic[0] == '\0') {
+esp_err_t uptime_sensor_config_to_json(const void *opaque,
+                                       json_gen_str_t *json) {
+  const uptime_sensor_instance_t *instance = opaque;
+  if (instance == NULL || json == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
-  return json_gen_arr_set_string(json, configuration->sensor_topic) == 0
+  return json_gen_obj_set_int(json, "interval",
+                              instance->configuration.interval_seconds) == 0 &&
+                 json_obj_set_escaped_string(
+                     json, "sensor_topic", instance->configuration.sensor_topic)
+             ? ESP_OK
+             : ESP_FAIL;
+}
+
+esp_err_t uptime_sensor_working_topics_json_add(const void *opaque,
+                                                json_gen_str_t *json) {
+  const uptime_sensor_instance_t *instance = opaque;
+  if (instance == NULL || json == NULL ||
+      instance->configuration.sensor_topic[0] == '\0') {
+    return ESP_ERR_INVALID_ARG;
+  }
+  return json_gen_arr_set_string(json, instance->configuration.sensor_topic) == 0
              ? ESP_OK
              : ESP_FAIL;
 }

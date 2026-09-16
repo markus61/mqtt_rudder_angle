@@ -14,7 +14,7 @@
 #define SENSOR_CONFIG_LOOKUP_NVS_KEY "sensor_configs"
 #define SENSOR_CONFIG_LOOKUP_NVS_MAGIC UINT32_C(0x53434647)
 #define SENSOR_CONFIG_LOOKUP_NVS_VERSION UINT16_C(1)
-#define REGISTRY_INITIAL_CAPACITY 10U
+#define REGISTRY_INITIAL_CAPACITY SENSOR_PROVIDER_MAX_INSTANCES
 
 /* Capacity limits attachments, not model identifiers or provider dispatch. */
 static feature_entry_t *configuration_storage[REGISTRY_INITIAL_CAPACITY];

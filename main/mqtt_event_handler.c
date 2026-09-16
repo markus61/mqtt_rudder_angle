@@ -150,7 +150,8 @@ static void subscribe_control_topic(esp_mqtt_client_handle_t client)
     }
 }
 
-static bool dispatch_device_control(const char *topic, int topic_length,
+static bool dispatch_device_control(esp_mqtt_client_handle_t client,
+                                    const char *topic, int topic_length,
                                     const char *payload, int payload_length)
 {
     char device_control_topic[sizeof("control/") + DEVICE_CONFIG_NAME_SIZE];
@@ -178,6 +179,29 @@ static bool dispatch_device_control(const char *topic, int topic_length,
         if (length == 0U || !mqtt_publish_device_reply(payload, length))
             ESP_LOGW(TAG, "Could not publish provider catalogue");
     }
+    else if (strcasecmp(action->valuestring, "add_provider") == 0)
+    {
+        const esp_err_t err = sensor_provider_add_from_mqtt(action_json);
+        const char *name = cJSON_GetStringValue(
+            cJSON_GetObjectItemCaseSensitive(action_json, "name"));
+        char sensor_component[SENSOR_CONFIG_NAME_SIZE];
+        if (name != NULL &&
+            sensor_provider_control_component(name, sensor_component,
+                                              sizeof(sensor_component)))
+        {
+            char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+            if (format_sensor_control_topic(control_topic, sizeof(control_topic),
+                                            sensor_component))
+            {
+                ESP_LOGI(TAG, "Subscribing to added sensor '%s'", control_topic);
+                esp_mqtt_client_subscribe(client, control_topic, 1);
+            }
+        }
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Could not add provider: %s", esp_err_to_name(err));
+        }
+    }
     else if (strcasecmp(action->valuestring, "nvs_write") == 0)
     {
         const esp_err_t err = device_config_store_to_nvs();
@@ -203,10 +227,11 @@ static bool dispatch_device_control(const char *topic, int topic_length,
 
 static void synchronize_sensor_control_subscription(esp_mqtt_client_handle_t client,
                                                     const char *old_topic,
-                                                    const char *provider_name)
+                                                    size_t provider_index)
 {
     char sensor_component[SENSOR_CONFIG_NAME_SIZE];
     char new_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+    const char *provider_name = sensor_provider_name(provider_index);
     if (!sensor_provider_control_component(provider_name, sensor_component,
                                            sizeof(sensor_component)) ||
         !format_sensor_control_topic(new_topic, sizeof(new_topic), sensor_component) ||
@@ -240,8 +265,7 @@ static bool dispatch_provider_control(esp_mqtt_client_handle_t client,
                 provider_name, payload, payload_length);
             /* Configure can alter the live identity even when NVS persistence
              * fails. Always compare the registry afterwards to keep topics in sync. */
-            synchronize_sensor_control_subscription(client, control_topic,
-                                                    provider_name);
+            synchronize_sensor_control_subscription(client, control_topic, i);
             if (err != ESP_OK)
                 ESP_LOGW(TAG, "Sensor '%s' rejected control action: %s",
                          sensor_component, esp_err_to_name(err));
@@ -383,7 +407,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
             break;
         }
         default:
-            if (!dispatch_device_control(event->topic, event->topic_len,
+            if (!dispatch_device_control(event->client, event->topic, event->topic_len,
                                          event->data, event->data_len) &&
                 !dispatch_provider_control(event->client, event->topic, event->topic_len,
                                            event->data, event->data_len))

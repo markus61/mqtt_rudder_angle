@@ -34,57 +34,55 @@ typedef struct {
 /** Maximum bytes, including the terminator, in an attached sensor name.
  * Sensor names are MQTT topic levels: ASCII letters, digits, '_' and '-' only. */
 #define SENSOR_CONFIG_NAME_SIZE 64U
+#define SENSOR_PROVIDER_MAX_INSTANCES 10U
 
 /** Write every registered sensor configuration, including its name, as a JSON
  * array. */
 size_t registry_providers_json_dump(char *buffer, size_t buffer_size);
 
-/** Write the registered configuration for one provider as a JSON object. */
+/** Write one named instance's live configuration as a JSON object. */
 size_t registry_provider_json_dump(const char *provider_name, char *buffer,
                                   size_t buffer_size);
 
-/** Look up the configured name and type for one provider. */
+/** Look up one instance's registry-owned name and type. */
 bool registry_provider_identity(const char *provider_name, const char **name,
                                 const char **type);
 
 /** Append attached feature objects to an already-open JSON array. */
 bool registry_providers_json_add(json_gen_str_t *json);
 
-/** Initialize persisted sensor settings and start missing providers from
- * defaults, assigning each successful start a boot-session sensor number. */
+/** Restore and start the complete persisted registry. When no registry exists,
+ * create one numeric-name instance from every provider's default and persist
+ * that initial registry. */
 esp_err_t registry_init_on_boot(void);
 
-/** Configure one provider and attach or rename its sensor identity from an
- * MQTT action JSON object. Hardware type is fixed; an optional type can only
- * repeat the provider's current type. */
+/** Configure the named instance from an MQTT action and optionally rename it.
+ * Hardware type is fixed; an optional type can only repeat its current type. */
 esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
                                               const cJSON *action_json);
 
-/** Number of compiled-in providers that expose a control channel. */
+/** Create, configure, start and persist an additional provider instance. */
+esp_err_t sensor_provider_add_from_mqtt(const cJSON *action_json);
+
+/** Number of active provider instances. */
 size_t sensor_provider_count(void);
 
-/** Internal provider API name. It is never exposed in an MQTT topic. */
+/** Name of an active provider instance. */
 const char *sensor_provider_name(size_t index);
 
-/** Startup-assigned external sensor number, or zero when it did not start. */
+/** One-based registry position for a started named instance, or zero. */
 size_t sensor_provider_number(const char *provider_name);
 
-/** Copy the provider's current MQTT control/reply component into buffer.
- * Default-started providers use their boot-session number; configured
- * providers use their attached name. Returns false when unavailable. */
+/** Copy a started instance's name into the MQTT control/reply component. */
 bool sensor_provider_control_component(const char *provider_name, char *buffer,
                                        size_t buffer_size);
 
-/** Deliver a control payload to the provider named by its control topic.
- * Returns the provider's result, or ESP_ERR_INVALID_ARG for an invalid name
- * or payload. */
+/** Deliver a control payload to the instance named by its control topic. */
 esp_err_t sensor_provider_handle_control(const char *provider_name,
                                          const char *payload,
                                          int payload_length);
 
-/** Append one object for every successfully started provider. Each object has
- * its current MQTT control name (a boot number until configured) and its
- * provider-reported normal post-start publication topics. */
+/** Append every started instance and its normal publication topics. */
 bool sensor_active_providers_json_add(json_gen_str_t *json);
 
 /** Append all compiled-in providers and their supported model types. */

@@ -81,13 +81,14 @@ static bool fail_start;
 MOCK_PROVIDER(angle_sensor, 0, "model-a")
 MOCK_PROVIDER(uptime_sensor, 1, "model-b")
 
-static esp_err_t configure(const char *name, const char *type, int value)
+static esp_err_t configure(const char *provider, const char *name,
+                           const char *type, int value)
 {
     cJSON *json = cJSON_CreateObject();
     cJSON_AddStringToObject(json, "name", name);
     cJSON_AddStringToObject(json, "type", type);
     cJSON_AddNumberToObject(json, "value", value);
-    esp_err_t err = sensor_config_from_mqtt(json);
+    esp_err_t err = sensor_provider_configure_from_mqtt(provider, json);
     cJSON_Delete(json); /* Lifetime regression: registry must own every field. */
     return err;
 }
@@ -111,6 +112,13 @@ int main(void)
     assert(sensor_provider_number("angle_sensor") == 1);
     assert(sensor_provider_number("uptime_sensor") == 2);
     assert(sensor_provider_number("missing") == 0);
+    char component[SENSOR_CONFIG_NAME_SIZE];
+    assert(sensor_provider_control_component("angle_sensor", component,
+                                             sizeof(component)));
+    assert(!strcmp(component, "1"));
+    assert(sensor_provider_control_component("uptime_sensor", component,
+                                             sizeof(component)));
+    assert(!strcmp(component, "2"));
     assert(sensor_provider_handle_control("uptime_sensor", "{}", 2) == ESP_OK);
     assert(control_actions[1] == 1);
     control_results[1] = ESP_FAIL;
@@ -133,23 +141,24 @@ int main(void)
                        "{\"name\":\"uptime_sensor\",\"types\":[\"model-b\"]}]}"));
     assert(registry_providers_json_dump(json, sizeof(json)) == 2);
     assert(strcmp(json, "[]") == 0);
-    assert(configure("unknown", "missing", 1) == ESP_ERR_INVALID_ARG);
-    assert(configure("unknown", "ambiguous", 1) == ESP_ERR_INVALID_ARG);
-    assert(sensor_config_from_mqtt(NULL) == ESP_ERR_INVALID_ARG);
+    assert(configure("angle_sensor", "unknown", "missing", 1) == ESP_ERR_INVALID_ARG);
+    assert(configure("angle_sensor", "unknown", "ambiguous", 1) == ESP_ERR_INVALID_ARG);
+    assert(sensor_provider_configure_from_mqtt("angle_sensor", NULL) == ESP_ERR_INVALID_ARG);
     assert(writes == 0 && validations[0] == 0 && validations[1] == 0);
 
-    assert(configure("rudder\"\\\n", "model-a", 7) == ESP_OK);
-    assert(configure("clock", "model-b", 60) == ESP_OK);
+    assert(configure("angle_sensor", "rudder", "model-a", 7) == ESP_OK);
+    assert(configure("uptime_sensor", "clock", "model-b", 60) == ESP_OK);
     assert(active_lookup->count == 2);
-    assert(configure("rudder\"\\\n", "model-a", 9) == ESP_OK);
+    assert(configure("angle_sensor", "rudder", "model-a", 9) == ESP_OK);
     assert(active_lookup->count == 2);
     int before = writes;
-    assert(configure("other", "model-a2", 1) == ESP_ERR_INVALID_STATE);
-    assert(configure("clock", "model-a", 1) == ESP_ERR_INVALID_STATE);
-    assert(configure("clock", "model-b", -1) == ESP_ERR_INVALID_ARG);
+    assert(configure("angle_sensor", "other", "model-a2", 1) == ESP_ERR_INVALID_STATE);
+    assert(configure("angle_sensor", "clock", "model-a", 1) == ESP_ERR_INVALID_STATE);
+    assert(configure("uptime_sensor", "clock", "model-b", -1) == ESP_ERR_INVALID_ARG);
+    assert(configure("angle_sensor", "not/safe", "model-a", 1) == ESP_ERR_INVALID_ARG);
     assert(values[1] == 60 && writes == before);
     fail_start = true;
-    assert(configure("clock", "model-b", 17) == ESP_FAIL);
+    assert(configure("uptime_sensor", "clock", "model-b", 17) == ESP_FAIL);
     assert(values[1] == 60 && writes == before);
     fail_start = false;
 
@@ -166,6 +175,13 @@ int main(void)
                                       &provider_type));
     assert(!strcmp(provider_name, "clock"));
     assert(!strcmp(provider_type, "model-b"));
+    assert(sensor_provider_control_component("uptime_sensor", component,
+                                             sizeof(component)));
+    assert(!strcmp(component, "clock"));
+    assert(configure("uptime_sensor", "watch", "model-b", 60) == ESP_OK);
+    assert(sensor_provider_control_component("uptime_sensor", component,
+                                             sizeof(component)));
+    assert(!strcmp(component, "watch"));
     assert(!registry_provider_identity("missing", &provider_name,
                                        &provider_type));
 
@@ -182,7 +198,7 @@ int main(void)
     cJSON *dump = cJSON_Parse(json);
     assert(cJSON_GetArraySize(dump) == 2);
     assert(!strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 0), "name")->valuestring,
-                   "rudder\"\\\n"));
+                   "rudder"));
     assert(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 1), "value")->valueint == 60);
     cJSON_Delete(dump);
     assert(registry_providers_json_dump(json, length + 1) == length);
@@ -219,10 +235,10 @@ int main(void)
     stored_size = full_size;
 
     fail_commit = true;
-    assert(configure("clock", "model-b", 30) == ESP_FAIL);
+    assert(configure("uptime_sensor", "watch", "model-b", 30) == ESP_FAIL);
     assert(values[1] == 30 && active_lookup->count == 2);
     fail_commit = false;
-    assert(configure("clock", "model-b", 30) == ESP_OK);
+    assert(configure("uptime_sensor", "watch", "model-b", 30) == ESP_OK);
     reboot();
     assert(registry_init_on_boot() == ESP_OK && values[1] == 30);
 

@@ -145,14 +145,11 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
       action->valuestring == NULL) {
     ESP_LOGW(TAG, "Control payload must contain a string action");
     result = ESP_ERR_INVALID_ARG;
-  } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
-    const char *type = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
-    const esp_err_t err = angle_sensor_can_serve_type(type)
-                              ? sensor_config_from_mqtt(action_json)
-                              : ESP_ERR_INVALID_ARG;
+  } else if (strcasecmp(action->valuestring, "configure") == 0) {
+    const esp_err_t err = sensor_provider_configure_from_mqtt(
+        ANGLE_SENSOR_PROVIDER_NAME, action_json);
     if (err != ESP_OK) {
-      ESP_LOGW(TAG, "Could not configure provider: %s", esp_err_to_name(err));
+      ESP_LOGW(TAG, "Could not configure sensor: %s", esp_err_to_name(err));
     }
     result = err;
   } else if (strcasecmp(action->valuestring, "calibrate") == 0) {
@@ -183,7 +180,8 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
     publish_angle_reply_message(
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Configure it with a supported Elobau type and a "
-        "name; every sensor_* setting is optional, and omitted settings "
+        "safe name; this moves control and replies from its number to that "
+        "name. Every sensor_* setting is optional, and omitted settings "
         "retain their current values, while an invalid supplied setting "
         "rejects the entire action. Use "
         "calibration_check to inspect observed voltage limits, or calibrate "
@@ -196,7 +194,7 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
         !json_obj_set_escaped_string(&generator, "unknown_action",
                                      action->valuestring) ||
         json_gen_push_array(&generator, "available_actions") != 0 ||
-        json_gen_arr_set_string(&generator, "configure_feature") != 0 ||
+        json_gen_arr_set_string(&generator, "configure") != 0 ||
         json_gen_arr_set_string(&generator, "calibrate") != 0 ||
         json_gen_arr_set_string(&generator, "calibration_check") != 0 ||
         json_gen_arr_set_string(&generator, "braindump") != 0 ||

@@ -32,7 +32,6 @@ static esp_mqtt_client_handle_t mqtt_client;
 #define MQTT_READING_TOPIC_SIZE 64
 #define MQTT_READING_JSON_SIZE 128
 #define MQTT_READING_QUEUE_LENGTH 1
-#define MQTT_SENSOR_NUMBER_SIZE 20
 
 typedef struct {
   char topic[MQTT_READING_TOPIC_SIZE];
@@ -223,8 +222,9 @@ bool mqtt_publish(const char *topic, const char *payload, size_t payload_length,
 static bool mqtt_publish_sensor(const char *topic_prefix,
                                 const char *provider_name,
                                 const char *payload, size_t payload_length) {
-  const size_t sensor_number = sensor_provider_number(provider_name);
-  if (sensor_number == 0U) {
+  char sensor_component[SENSOR_CONFIG_NAME_SIZE];
+  if (!sensor_provider_control_component(provider_name, sensor_component,
+                                         sizeof(sensor_component))) {
     return false;
   }
   const char *device_name = device_config_get()->name;
@@ -232,9 +232,9 @@ static bool mqtt_publish_sensor(const char *topic_prefix,
     return false;
   }
   char topic[sizeof("control_reply/") + DEVICE_CONFIG_NAME_SIZE + 1U +
-             MQTT_SENSOR_NUMBER_SIZE];
-  const int topic_length = snprintf(topic, sizeof(topic), "%s%s/%zu",
-                                    topic_prefix, device_name, sensor_number);
+             SENSOR_CONFIG_NAME_SIZE];
+  const int topic_length = snprintf(topic, sizeof(topic), "%s%s/%s",
+                                    topic_prefix, device_name, sensor_component);
   return topic_length >= 0 && (size_t)topic_length < sizeof(topic) &&
          mqtt_publish(topic, payload, payload_length, 1, false);
 }

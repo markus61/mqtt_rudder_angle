@@ -120,14 +120,11 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
       action->valuestring == NULL) {
     ESP_LOGW("uptime_sensor", "Control payload must contain a string action");
     result = ESP_ERR_INVALID_ARG;
-  } else if (strcasecmp(action->valuestring, "configure_feature") == 0) {
-    const char *type = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(action_json, "type"));
-    const esp_err_t err = uptime_sensor_can_serve_type(type)
-                              ? sensor_config_from_mqtt(action_json)
-                              : ESP_ERR_INVALID_ARG;
+  } else if (strcasecmp(action->valuestring, "configure") == 0) {
+    const esp_err_t err = sensor_provider_configure_from_mqtt(
+        UPTIME_SENSOR_PROVIDER_NAME, action_json);
     if (err != ESP_OK) {
-      ESP_LOGW("uptime_sensor", "Could not configure provider: %s",
+      ESP_LOGW("uptime_sensor", "Could not configure sensor: %s",
                esp_err_to_name(err));
     }
     result = err;
@@ -136,8 +133,9 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
   } else if (strcasecmp(action->valuestring, "help") == 0) {
     publish_uptime_reply_message(
         "Publishes elapsed device uptime periodically. Start it with a "
-        "configure_feature action using type 'dummy_uptime', a name, an "
-        "interval in seconds, and an optional sensor_topic. Invalid supplied "
+        "configure action using type 'dummy_uptime', a safe name, an interval "
+        "in seconds, and an optional sensor_topic. It moves control and "
+        "replies from the sensor number to that name. Invalid supplied "
         "settings reject the entire action.");
   } else {
     ESP_LOGW("uptime_sensor", "Unknown control action '%s'", action->valuestring);

@@ -27,7 +27,7 @@ static const char *TAG = "mqtt_event_handler";
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX "config/"
 #define MQTT_CONFIGURE_RESPONSE_TOPIC_SIZE ((sizeof(MQTT_CONFIGURE_RESPONSE_TOPIC_PREFIX) + 12U))
 #define MQTT_SENSOR_CONTROL_TOPIC_SIZE \
-    (sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + 20U)
+    (sizeof("control/") + DEVICE_CONFIG_NAME_SIZE + 1U + SENSOR_CONFIG_NAME_SIZE)
 
 typedef enum
 {
@@ -78,12 +78,13 @@ static void format_config_response_topic(char *buffer, size_t buffer_size)
 }
 
 static bool format_sensor_control_topic(char *buffer, size_t buffer_size,
-                                        size_t sensor_number)
+                                        const char *sensor_component)
 {
     const char *device_name = device_config_get()->name;
-    const int length = snprintf(buffer, buffer_size, "control/%s/%zu", device_name,
-                                sensor_number);
-    return device_name[0] != '\0' && sensor_number != 0U && length >= 0 &&
+    const int length = snprintf(buffer, buffer_size, "control/%s/%s", device_name,
+                                sensor_component != NULL ? sensor_component : "");
+    return device_name[0] != '\0' && sensor_component != NULL &&
+           sensor_component[0] != '\0' && length >= 0 &&
            (size_t)length < buffer_size;
 }
 
@@ -129,16 +130,21 @@ static void subscribe_control_topic(esp_mqtt_client_handle_t client)
     for (size_t i = 0; i < sensor_provider_count(); ++i)
     {
         char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+        char sensor_component[SENSOR_CONFIG_NAME_SIZE];
         const char *provider_name = sensor_provider_name(i);
-        const size_t sensor_number = sensor_provider_number(provider_name);
-        if (!format_sensor_control_topic(control_topic, sizeof(control_topic),
-                                         sensor_number))
+        if (!sensor_provider_control_component(provider_name, sensor_component,
+                                               sizeof(sensor_component)))
         {
             ESP_LOGW(TAG, "Sensor provider '%s' is not active; no control topic",
                      provider_name != NULL ? provider_name : "");
             continue;
         }
-        ESP_LOGI(TAG, "Subscribing to sensor %zu control topic '%s'", sensor_number,
+        if (!format_sensor_control_topic(control_topic, sizeof(control_topic),
+                                         sensor_component))
+        {
+            continue;
+        }
+        ESP_LOGI(TAG, "Subscribing to sensor '%s' control topic '%s'", sensor_component,
                  control_topic);
         esp_mqtt_client_subscribe(client, control_topic, 1);
     }
@@ -195,25 +201,50 @@ static bool dispatch_device_control(const char *topic, int topic_length,
     return true;
 }
 
-static bool dispatch_provider_control(const char *topic, int topic_length,
+static void synchronize_sensor_control_subscription(esp_mqtt_client_handle_t client,
+                                                    const char *old_topic,
+                                                    const char *provider_name)
+{
+    char sensor_component[SENSOR_CONFIG_NAME_SIZE];
+    char new_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+    if (!sensor_provider_control_component(provider_name, sensor_component,
+                                           sizeof(sensor_component)) ||
+        !format_sensor_control_topic(new_topic, sizeof(new_topic), sensor_component) ||
+        strcmp(old_topic, new_topic) == 0)
+        return;
+
+    ESP_LOGI(TAG, "Moving sensor control from '%s' to '%s'", old_topic, new_topic);
+    esp_mqtt_client_subscribe(client, new_topic, 1);
+    esp_mqtt_client_unsubscribe(client, old_topic);
+}
+
+static bool dispatch_provider_control(esp_mqtt_client_handle_t client,
+                                      const char *topic, int topic_length,
                                       const char *payload, int payload_length)
 {
     for (size_t i = 0; i < sensor_provider_count(); ++i)
     {
         char control_topic[MQTT_SENSOR_CONTROL_TOPIC_SIZE];
+        char sensor_component[SENSOR_CONFIG_NAME_SIZE];
         const char *provider_name = sensor_provider_name(i);
-        const size_t sensor_number = sensor_provider_number(provider_name);
+        if (!sensor_provider_control_component(provider_name, sensor_component,
+                                               sizeof(sensor_component)))
+            continue;
         if (!format_sensor_control_topic(control_topic, sizeof(control_topic),
-                                         sensor_number))
+                                         sensor_component))
             continue;
         if ((size_t)topic_length == strlen(control_topic) &&
             strncmp(topic, control_topic, (size_t)topic_length) == 0)
         {
             const esp_err_t err = sensor_provider_handle_control(
                 provider_name, payload, payload_length);
+            /* Configure can alter the live identity even when NVS persistence
+             * fails. Always compare the registry afterwards to keep topics in sync. */
+            synchronize_sensor_control_subscription(client, control_topic,
+                                                    provider_name);
             if (err != ESP_OK)
-                ESP_LOGW(TAG, "Sensor %zu rejected control action: %s",
-                         sensor_number, esp_err_to_name(err));
+                ESP_LOGW(TAG, "Sensor '%s' rejected control action: %s",
+                         sensor_component, esp_err_to_name(err));
             return true;
         }
     }
@@ -354,7 +385,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t event_base,
         default:
             if (!dispatch_device_control(event->topic, event->topic_len,
                                          event->data, event->data_len) &&
-                !dispatch_provider_control(event->topic, event->topic_len,
+                !dispatch_provider_control(event->client, event->topic, event->topic_len,
                                            event->data, event->data_len))
                 ESP_LOGW(TAG, "No handler for topic %.*s", event->topic_len,
                          event->topic);

@@ -31,6 +31,10 @@ typedef struct {
   size_t count;
 } registry_t;
 
+/** Maximum bytes, including the terminator, in an attached sensor name.
+ * Sensor names are MQTT topic levels: ASCII letters, digits, '_' and '-' only. */
+#define SENSOR_CONFIG_NAME_SIZE 64U
+
 /** Write every registered sensor configuration, including its name, as a JSON
  * array. */
 size_t registry_providers_json_dump(char *buffer, size_t buffer_size);
@@ -50,8 +54,10 @@ bool registry_providers_json_add(json_gen_str_t *json);
  * defaults, assigning each successful start a boot-session sensor number. */
 esp_err_t registry_init_on_boot(void);
 
-/** Configure a sensor based on an MQTT action JSON object. */
-esp_err_t sensor_config_from_mqtt(const cJSON *action_json);
+/** Configure one provider and attach or rename its sensor identity from an
+ * MQTT action JSON object. The requested type must belong to provider_name. */
+esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
+                                              const cJSON *action_json);
 
 /** Number of compiled-in providers that expose a control channel. */
 size_t sensor_provider_count(void);
@@ -61,6 +67,12 @@ const char *sensor_provider_name(size_t index);
 
 /** Startup-assigned external sensor number, or zero when it did not start. */
 size_t sensor_provider_number(const char *provider_name);
+
+/** Copy the provider's current MQTT control/reply component into buffer.
+ * Default-started providers use their boot-session number; configured
+ * providers use their attached name. Returns false when unavailable. */
+bool sensor_provider_control_component(const char *provider_name, char *buffer,
+                                       size_t buffer_size);
 
 /** Deliver a control payload to the provider named by its control topic.
  * Returns the provider's result, or ESP_ERR_INVALID_ARG for an invalid name

@@ -2,6 +2,7 @@
 #include "sensor_config.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "elobau_angle_sensor.h"
@@ -255,6 +256,32 @@ bool registry_provider_identity(const char *provider_name, const char **name,
   return false;
 }
 
+bool sensor_provider_control_component(const char *provider_name, char *buffer,
+                                       size_t buffer_size) {
+  const sensor_provider_t *provider = provider_for_name(provider_name);
+  if (provider == NULL || buffer == NULL || buffer_size == 0U) {
+    return false;
+  }
+  const size_t index = provider_index(provider);
+  if (!provider_is_started[index] || provider_sensor_number[index] == 0U) {
+    return false;
+  }
+  const char *configured_name;
+  const char *configured_type;
+  if (registry_provider_identity(provider_name, &configured_name,
+                                 &configured_type)) {
+    const size_t length = strlen(configured_name);
+    if (length + 1U > buffer_size) {
+      return false;
+    }
+    memcpy(buffer, configured_name, length + 1U);
+    return true;
+  }
+  const int length = snprintf(buffer, buffer_size, "%zu",
+                              provider_sensor_number[index]);
+  return length >= 0 && (size_t)length < buffer_size;
+}
+
 esp_err_t registry_init_on_boot(void) {
   if (active_lookup != NULL) {
     return ESP_OK;
@@ -334,22 +361,40 @@ esp_err_t registry_init_on_boot(void) {
   return result;
 }
 
+static bool sensor_name_is_safe_topic_level(const char *name) {
+  if (name == NULL || name[0] == '\0' ||
+      strlen(name) >= SENSOR_CONFIG_NAME_SIZE) {
+    return false;
+  }
+  for (const unsigned char *character = (const unsigned char *)name;
+       *character != '\0'; ++character) {
+    if (!( (*character >= 'A' && *character <= 'Z') ||
+           (*character >= 'a' && *character <= 'z') ||
+           (*character >= '0' && *character <= '9') || *character == '_' ||
+           *character == '-')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* Called by the MQTT event task after boot; registry mutations are serialized
  * there. Copy names/types before the caller deletes the cJSON action. */
-esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
+esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
+                                              const cJSON *action_json) {
   const char *type = cJSON_GetStringValue(
       cJSON_GetObjectItemCaseSensitive(action_json, "type"));
   const char *name = cJSON_GetStringValue(
       cJSON_GetObjectItemCaseSensitive(action_json, "name"));
   if (!cJSON_IsObject(action_json) || type == NULL || type[0] == '\0' ||
-      name == NULL || name[0] == '\0') {
+      !sensor_name_is_safe_topic_level(name)) {
     return ESP_ERR_INVALID_ARG;
   }
   if (active_lookup == NULL) {
     return ESP_ERR_INVALID_STATE;
   }
-  const sensor_provider_t *provider = provider_for_type(type);
-  if (provider == NULL) {
+  const sensor_provider_t *provider = provider_for_name(provider_name);
+  if (provider == NULL || provider_for_type(type) != provider) {
     ESP_LOGW(TAG, "Unsupported or ambiguous sensor type '%s'", type);
     return ESP_ERR_INVALID_ARG;
   }
@@ -357,14 +402,15 @@ esp_err_t sensor_config_from_mqtt(const cJSON *action_json) {
   size_t index = active_lookup->count;
   for (size_t i = 0; i < active_lookup->count; ++i) {
     const feature_entry_t *entry = active_lookup->configurations[i];
-    if (strcmp(entry->name, name) == 0) {
-      /* Reconfigure by identity, without repurposing a running provider. */
+    const sensor_provider_t *entry_provider = provider_for_type(entry->type);
+    if (entry_provider == provider) {
+      /* A provider remains tied to its original model, but its name may move. */
       if (strcmp(entry->type, type) != 0) {
         return ESP_ERR_INVALID_STATE;
       }
       index = i;
-    } else if (provider_for_type(entry->type) == provider) {
-      ESP_LOGW(TAG, "Provider already attached as '%s'", entry->name);
+    } else if (strcmp(entry->name, name) == 0) {
+      ESP_LOGW(TAG, "Sensor name '%s' is already attached", name);
       return ESP_ERR_INVALID_STATE;
     }
   }

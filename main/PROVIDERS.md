@@ -53,8 +53,9 @@ responsibility for applying changes to running hardware and their timing.
 Boot precedes MQTT; provider control operations run on the MQTT event task. They
 must remain serialized. Successfully started sensors are assigned consecutive
 numbers for that boot: persisted records keep their stored order, then providers
-absent from NVS start from defaults in catalogue order. Sensor `1` therefore uses
-`control/<device_name>/1` and replies on `control_reply/<device_name>/1`.
+absent from NVS start from defaults in catalogue order. Sensor `1` therefore
+initially uses `control/<device_name>/1` and replies on
+`control_reply/<device_name>/1`.
 Providers that fail to start receive no number or control subscription. Provider
 API prefixes such as `angle_sensor` are internal and never appear in MQTT topics.
 Configuration snapshots avoid reading live provider fields during JSON output,
@@ -67,15 +68,22 @@ non-ASCII characters are rejected.
 
 `reset` is a device action: publish `{"action":"reset"}` to
 `control/<device>` to restart the device. Sensor topics never reset the device.
-The current providers retain the existing `configure_feature` and `braindump`
-actions. A `configure_feature` request must use the sensor topic for the
-provider that serves its type.
+Providers offer `configure` and `braindump` actions. A `configure` request
+must use the current sensor topic for the provider that serves its type. Its
+`name` is a safe MQTT topic level: 1-63 ASCII letters, digits, `_`, or `-`.
+After configuration, that provider subscribes to
+`control/<device_name>/<name>` and stops listening on its old topic; replies
+move to `control_reply/<device_name>/<name>`. Repeating `configure` on the
+named topic can rename the sensor and moves both topics again. A name already
+attached to another provider is rejected.
 
 A `braindump` reply is symmetric with its request topic. `control/<device>`
 returns device state on `control_reply/<device>`, while
-`control/<device>/<number>` returns only that sensor's configuration on
-`control_reply/<device>/<number>`. A default-started sensor has no configured
-name, but its reply still carries its type and configuration. Device replies
+`control/<device>/<component>` returns only that sensor's configuration on
+`control_reply/<device>/<component>`. The component is the boot-session number
+until `configure` attaches a name, then that configured name. A default-started
+sensor has no configured name, but its reply still carries its type and
+configuration. Device replies
 include `runtime.active_sensors`, containing the numeric identifiers of sensors
 whose `start()` call succeeded.
 
@@ -87,7 +95,7 @@ Example uptime action (published to `control/<device_name>/2` when the angle
 sensor and uptime provider both start successfully):
 
 ```json
-{"action":"configure_feature","name":"device_uptime","type":"dummy_uptime","interval":60,"sensor_topic":"sensors/uptime"}
+{"action":"configure","name":"device_uptime","type":"dummy_uptime","interval":60,"sensor_topic":"sensors/uptime"}
 ```
 
 Run `bash tests/host/run.sh` for registry lifecycle tests with fake hardware/NVS,

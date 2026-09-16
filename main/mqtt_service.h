@@ -49,8 +49,8 @@ bool mqtt_publish(const char *topic, const char *payload, size_t payload_length,
 /** Publish an opaque payload on the device's control-reply topic. */
 bool mqtt_publish_device_reply(const char *payload, size_t payload_length);
 
-/** Publish an opaque payload to the startup-assigned sensor reply topic.
- * provider_name is an internal API name and is resolved to its sensor number. */
+/** Publish an opaque payload to a sensor reply topic. provider_name is an
+ * internal API name, resolved to its current numeric or configured component. */
 bool mqtt_publish_sensor_reply(const char *provider_name, const char *payload,
                                size_t payload_length);
 

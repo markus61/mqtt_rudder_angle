@@ -29,12 +29,12 @@ bash tests/host/run.sh
 
 The firmware supports multiple sensor providers, which can be configured at runtime. Each provider is responsible for interfacing with a specific type of sensor and publishing its data over MQTT.
 
-See [main/PROVIDERS.md](main/PROVIDERS.md) for the sensor-provider interface
+See [PROVIDERS.md](PROVIDERS.md) for the sensor-provider interface
 and MQTT configuration behavior.
 
 ## Usage
 
-You obviously need to flash the firmware onto your ESP32 device and configure the sensor providers according to your setup. Refer to the [main/PROVIDERS.md](main/PROVIDERS.md) for detailed instructions on configuring and using the sensor providers.
+You obviously need to flash the firmware onto your ESP32 device and configure the sensor providers according to your setup. Refer to the [PROVIDERS.md](PROVIDERS.md) for detailed instructions on configuring and using the sensor providers.
 
 Additionally, ensure that your MQTT broker is properly set up and accessible from the ESP32 device, as the firmware relies on MQTT for data publishing. Currently the firmware expects the broker at the gateway IP. IPs are aqcuired by DHCP from the network. So you have a DHCP server running and properly configured.
 OTA requires a webserver to serve the builds.

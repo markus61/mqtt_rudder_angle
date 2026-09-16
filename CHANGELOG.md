@@ -2,7 +2,7 @@
 
 All notable changes to ManT1S Angle are documented in this file.
 
-## Unreleased
+## 0.1.13 - 2026-09-16
 
 ### Added
 
@@ -10,14 +10,29 @@ All notable changes to ManT1S Angle are documented in this file.
   name plus optional provider-specific initial settings.
 - Added independent runtime instances so multiple sensors may use the same
   provider implementation or model type.
+- Added complete-registry bootstrap coverage, same-type instance restoration,
+  name uniqueness, capacity, and persistence-retry coverage to host tests.
 
 ### Changed
 
 - Persist the numeric-name default instances as a complete registry on first
-  boot; later boots create exactly the instances recorded in NVS.
+  boot; later boots create exactly the instances recorded in NVS, without
+  synthesizing provider types absent from an existing registry.
+- Treat numeric bootstrap names as ordinary globally unique MQTT names.
+- Keep the version-1 NVS record layout while allowing multiple records of the
+  same type; every persisted record carries its own name, type, and settings.
+- Keep `configure` provider-scoped, updating and persisting only the instance
+  selected by its current control topic; a configured instance may be renamed
+  but not retargeted to a different type.
 - Made provider configuration, tasks, control replies, calibration, and JSON
   serialization instance-scoped. Angle instances share the ADC1 unit while
   retaining their own channels and calibration state.
+
+### Documentation
+
+- Moved and rewrote `PROVIDERS.md` at the repository root to document the
+  instance factory API, complete registry model, bootstrap behavior, and MQTT
+  actions.
 
 ## 0.1.10 - 2026-09-16
 

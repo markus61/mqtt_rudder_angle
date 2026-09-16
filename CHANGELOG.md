@@ -25,6 +25,8 @@ All notable changes to ManT1S Angle are documented in this file.
   selection in the generic sensor registry. Provider API names remain internal.
 - Made device braindumps expose each started sensor's current `name` and its
   provider-reported `working_topics`, so named control routes are discoverable.
+- Allowed name-only `configure` actions while keeping each provider's hardware
+  type fixed and retaining omitted provider settings.
 
 ### Fixed
 

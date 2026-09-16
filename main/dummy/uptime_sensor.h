@@ -21,6 +21,9 @@ esp_err_t uptime_sensor_start(void);
 /** Return the opaque configuration record persisted for this provider. */
 const void *uptime_sensor_config_get(void);
 
+/** Return this hardware's fixed model type. */
+const char *uptime_sensor_current_type(void);
+
 /** Return the size of the provider's opaque persistent configuration record. */
 size_t uptime_sensor_config_size(void);
 

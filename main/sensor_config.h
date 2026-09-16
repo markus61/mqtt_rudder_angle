@@ -55,7 +55,8 @@ bool registry_providers_json_add(json_gen_str_t *json);
 esp_err_t registry_init_on_boot(void);
 
 /** Configure one provider and attach or rename its sensor identity from an
- * MQTT action JSON object. The requested type must belong to provider_name. */
+ * MQTT action JSON object. Hardware type is fixed; an optional type can only
+ * repeat the provider's current type. */
 esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
                                               const cJSON *action_json);
 

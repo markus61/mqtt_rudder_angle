@@ -37,6 +37,9 @@ esp_err_t angle_sensor_start(void);
 /** Return the opaque configuration record persisted for this sensor. */
 const void *angle_sensor_config_get(void);
 
+/** Return this hardware's fixed model type. */
+const char *angle_sensor_current_type(void);
+
 /** Return the size of the sensor's opaque persistent configuration record. */
 size_t angle_sensor_config_size(void);
 

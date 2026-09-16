@@ -22,6 +22,7 @@ typedef struct {
   size_t (*supported_type_count)(void);
   const char *(*supported_type)(size_t index);
   const void *(*config_get)(void);
+  const char *(*current_type)(void);
   size_t (*config_size)(void);
   esp_err_t (*configure)(const cJSON *configuration);
   esp_err_t (*config_restore)(const void *configuration);
@@ -33,7 +34,8 @@ typedef struct {
 
 #define SENSOR_PROVIDER(prefix)                                                \
   {#prefix, prefix##_can_serve_type, prefix##_supported_type_count,           \
-   prefix##_supported_type, prefix##_config_get, prefix##_config_size,         \
+   prefix##_supported_type, prefix##_config_get, prefix##_current_type,       \
+   prefix##_config_size,                                                        \
    prefix##_configure,      prefix##_config_restore, prefix##_start,           \
    prefix##_config_to_json, prefix##_working_topics_json_add,                  \
    prefix##_control_action}
@@ -393,11 +395,13 @@ static bool sensor_name_is_safe_topic_level(const char *name) {
  * there. Copy names/types before the caller deletes the cJSON action. */
 esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
                                               const cJSON *action_json) {
-  const char *type = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(action_json, "type"));
+  const cJSON *type_item =
+      cJSON_GetObjectItemCaseSensitive(action_json, "type");
+  const char *requested_type = cJSON_GetStringValue(type_item);
   const char *name = cJSON_GetStringValue(
       cJSON_GetObjectItemCaseSensitive(action_json, "name"));
-  if (!cJSON_IsObject(action_json) || type == NULL || type[0] == '\0' ||
+  if (!cJSON_IsObject(action_json) ||
+      (type_item != NULL && (requested_type == NULL || requested_type[0] == '\0')) ||
       !sensor_name_is_safe_topic_level(name)) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -405,25 +409,35 @@ esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
     return ESP_ERR_INVALID_STATE;
   }
   const sensor_provider_t *provider = provider_for_name(provider_name);
-  if (provider == NULL || provider_for_type(type) != provider) {
-    ESP_LOGW(TAG, "Unsupported or ambiguous sensor type '%s'", type);
+  if (provider == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
   size_t index = active_lookup->count;
+  const char *attached_type = NULL;
   for (size_t i = 0; i < active_lookup->count; ++i) {
     const feature_entry_t *entry = active_lookup->configurations[i];
     const sensor_provider_t *entry_provider = provider_for_type(entry->type);
     if (entry_provider == provider) {
-      /* A provider remains tied to its original model, but its name may move. */
-      if (strcmp(entry->type, type) != 0) {
-        return ESP_ERR_INVALID_STATE;
-      }
       index = i;
+      attached_type = entry->type;
     } else if (strcmp(entry->name, name) == 0) {
       ESP_LOGW(TAG, "Sensor name '%s' is already attached", name);
       return ESP_ERR_INVALID_STATE;
     }
+  }
+  const char *type = attached_type != NULL ? attached_type
+                                            : provider->current_type();
+  if (type == NULL || type[0] == '\0' || provider_for_type(type) != provider) {
+    ESP_LOGW(TAG, "Unsupported or ambiguous sensor type '%s'",
+             type != NULL ? type : "");
+    return ESP_ERR_INVALID_ARG;
+  }
+  /* Hardware type is fixed. Accept a legacy field only when it repeats it. */
+  if (requested_type != NULL && strcmp(requested_type, type) != 0) {
+    ESP_LOGW(TAG, "Provider type '%s' cannot change to '%s'", type,
+             requested_type);
+    return ESP_ERR_INVALID_ARG;
   }
   const bool adding = index == active_lookup->count;
   if (adding && active_lookup->count == active_lookup->capacity) {

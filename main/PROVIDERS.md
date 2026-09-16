@@ -14,8 +14,9 @@ Attachments and their names/model types come only from MQTT or stored NVS record
 | `bool <prefix>_can_serve_type(const char *)` | Recognize exact model strings; return false for NULL/unknown types. Must have no side effects. Multiple providers claiming a model is an error. |
 | `size_t <prefix>_supported_type_count(void)` / `const char *<prefix>_supported_type(size_t)` | Enumerate the exact model strings exposed by the device-level `providers` action. Return NULL for an out-of-range index. |
 | `const void *<prefix>_config_get(void)` | Borrow the live provider-owned plain-data configuration; lifetime is the entire process. Keep sensible defaults in the provider. |
+| `const char *<prefix>_current_type(void)` | Return the fixed hardware type in live configuration. The registry stores it when the provider is first attached. |
 | `size_t <prefix>_config_size(void)` | Return the fixed configuration record size. Do not persist pointers, task handles or callbacks. |
-| `esp_err_t <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration atomically. Do not start a task here. Return an error without changing live settings when validation fails. |
+| `esp_err_t <prefix>_configure(const cJSON *)` | Validate and apply an MQTT configuration overlay atomically. Provider settings may be omitted to retain their current values. The hardware type is fixed and must not change. Do not start a task here. Return an error without changing live settings when validation fails. |
 | `esp_err_t <prefix>_config_restore(const void *)` | Copy a trusted binary record to live configuration. No MQTT validation. Used at boot and for failed configure/start rollback. |
 | `esp_err_t <prefix>_start(void)` | Start the configured provider; repeated calls must be safe. Clean up partial startup on failure. |
 | `esp_err_t <prefix>_config_to_json(json_gen_str_t *)` | Append the provider's settings to an open JSON object. The registry writes name/type. Escape strings and return a serialization error on failure. |
@@ -70,7 +71,8 @@ non-ASCII characters are rejected.
 `reset` is a device action: publish `{"action":"reset"}` to
 `control/<device>` to restart the device. Sensor topics never reset the device.
 Providers offer `configure` and `braindump` actions. A `configure` request
-must use the current sensor topic for the provider that serves its type. Its
+must use the current sensor topic. Hardware type comes from the provider's
+default configuration and cannot be changed. Its
 `name` is a safe MQTT topic level: 1-63 ASCII letters, digits, `_`, or `-`.
 After configuration, that provider subscribes to
 `control/<device_name>/<name>` and stops listening on its old topic; replies
@@ -98,7 +100,7 @@ Example uptime action (published to `control/<device_name>/2` when the angle
 sensor and uptime provider both start successfully):
 
 ```json
-{"action":"configure","name":"device_uptime","type":"dummy_uptime","interval":60,"sensor_topic":"sensors/uptime"}
+{"action":"configure","name":"device_uptime","interval":60,"sensor_topic":"sensors/uptime"}
 ```
 
 Run `bash tests/host/run.sh` for registry lifecycle tests with fake hardware/NVS,

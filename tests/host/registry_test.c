@@ -57,6 +57,7 @@ static esp_err_t control_results[2];
 static bool fail_start;
 #define MOCK_PROVIDER(prefix, index, model) \
     const void *prefix##_config_get(void) { return &values[index]; } \
+    const char *prefix##_current_type(void) { return model; } \
     size_t prefix##_config_size(void) { return sizeof(int); } \
     size_t prefix##_supported_type_count(void) { return 1; } \
     const char *prefix##_supported_type(size_t type_index) { \
@@ -67,6 +68,7 @@ static bool fail_start;
     esp_err_t prefix##_configure(const cJSON *json) { \
         ++validations[index]; \
         const cJSON *v = cJSON_GetObjectItemCaseSensitive(json, "value"); \
+        if (v == NULL) return ESP_OK; \
         values[index] = -999; /* Deliberately mutate even on validation failure. */ \
         if (!cJSON_IsNumber(v) || v->valueint < 0) return ESP_ERR_INVALID_ARG; \
         values[index] = v->valueint; return ESP_OK; } \
@@ -92,6 +94,15 @@ static esp_err_t configure(const char *provider, const char *name,
     cJSON_AddNumberToObject(json, "value", value);
     esp_err_t err = sensor_provider_configure_from_mqtt(provider, json);
     cJSON_Delete(json); /* Lifetime regression: registry must own every field. */
+    return err;
+}
+
+static esp_err_t configure_name_only(const char *provider, const char *name)
+{
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "name", name);
+    esp_err_t err = sensor_provider_configure_from_mqtt(provider, json);
+    cJSON_Delete(json);
     return err;
 }
 
@@ -148,13 +159,21 @@ int main(void)
     assert(sensor_provider_configure_from_mqtt("angle_sensor", NULL) == ESP_ERR_INVALID_ARG);
     assert(writes == 0 && validations[0] == 0 && validations[1] == 0);
 
+    /* A name-only action attaches a default-started provider without changing
+     * its fixed type or existing settings. */
+    assert(configure_name_only("uptime_sensor", "age") == ESP_OK);
+    assert(active_lookup->count == 1 && values[1] == 0);
+    assert(sensor_provider_control_component("uptime_sensor", component,
+                                             sizeof(component)));
+    assert(!strcmp(component, "age"));
+
     assert(configure("angle_sensor", "rudder", "model-a", 7) == ESP_OK);
     assert(configure("uptime_sensor", "clock", "model-b", 60) == ESP_OK);
     assert(active_lookup->count == 2);
     assert(configure("angle_sensor", "rudder", "model-a", 9) == ESP_OK);
     assert(active_lookup->count == 2);
     int before = writes;
-    assert(configure("angle_sensor", "other", "model-a2", 1) == ESP_ERR_INVALID_STATE);
+    assert(configure("angle_sensor", "other", "model-a2", 1) == ESP_ERR_INVALID_ARG);
     assert(configure("angle_sensor", "clock", "model-a", 1) == ESP_ERR_INVALID_STATE);
     assert(configure("uptime_sensor", "clock", "model-b", -1) == ESP_ERR_INVALID_ARG);
     assert(configure("angle_sensor", "not/safe", "model-a", 1) == ESP_ERR_INVALID_ARG);
@@ -202,8 +221,10 @@ int main(void)
     cJSON *dump = cJSON_Parse(json);
     assert(cJSON_GetArraySize(dump) == 2);
     assert(!strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 0), "name")->valuestring,
+                   "watch"));
+    assert(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 0), "value")->valueint == 60);
+    assert(!strcmp(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 1), "name")->valuestring,
                    "rudder"));
-    assert(cJSON_GetObjectItem(cJSON_GetArrayItem(dump, 1), "value")->valueint == 60);
     cJSON_Delete(dump);
     assert(registry_providers_json_dump(json, length + 1) == length);
     assert(registry_providers_json_dump(json, length) == 0);

@@ -179,8 +179,8 @@ esp_err_t angle_sensor_control_action(const char *payload, int payload_length) {
   } else if (strcasecmp(action->valuestring, "help") == 0) {
     publish_angle_reply_message(
         "Reads an Elobau angle sensor through the ADC and publishes its "
-        "angle in degrees. Configure it with a supported Elobau type and a "
-        "safe name; this moves control and replies from its number to that "
+        "angle in degrees. Configure it with a safe name; this moves control "
+        "and replies from its number to that "
         "name. Every sensor_* setting is optional, and omitted settings "
         "retain their current values, while an invalid supplied setting "
         "rejects the entire action. Use "
@@ -228,6 +228,10 @@ static float last_published_millivolts = NAN;
 
 /* INT_MIN means the configured voltage midpoint is still in use. */
 static volatile int centered_reference_millivolts = INT_MIN;
+
+const char *angle_sensor_current_type(void) {
+  return ((const angle_sensor_config_t *)angle_sensor_config_get())->sensor_type;
+}
 
 static TaskHandle_t angle_sensor_task_handle;
 

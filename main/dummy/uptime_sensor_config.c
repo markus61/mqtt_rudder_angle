@@ -58,16 +58,20 @@ const char *uptime_sensor_supported_type(size_t index) {
 }
 
 esp_err_t uptime_sensor_configure(const cJSON *configuration_json) {
-  if (!cJSON_IsObject(configuration_json) ||
-      !uptime_sensor_can_serve_type(cJSON_GetStringValue(
-          cJSON_GetObjectItemCaseSensitive(configuration_json, "type")))) {
+  if (!cJSON_IsObject(configuration_json)) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  const char *type = cJSON_GetStringValue(
+      cJSON_GetObjectItemCaseSensitive(configuration_json, "type"));
+  if (type != NULL && strcmp(type, configuration.sensor_type) != 0) {
     return ESP_ERR_INVALID_ARG;
   }
 
   const cJSON *interval =
       cJSON_GetObjectItemCaseSensitive(configuration_json, "interval");
-  if (!cJSON_IsNumber(interval) || interval->valueint <= 0 ||
-      interval->valueint > INT_MAX / 1000) {
+  if (interval != NULL && (!cJSON_IsNumber(interval) || interval->valueint <= 0 ||
+                           interval->valueint > INT_MAX / 1000)) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -79,14 +83,12 @@ esp_err_t uptime_sensor_configure(const cJSON *configuration_json) {
   }
 
   uptime_sensor_config_t candidate = configuration;
-  candidate.interval_seconds = interval->valueint;
+  if (interval != NULL) {
+    candidate.interval_seconds = interval->valueint;
+  }
   if (topic != NULL) {
     strlcpy(candidate.sensor_topic, topic, sizeof(candidate.sensor_topic));
   }
-  strlcpy(candidate.sensor_type,
-          cJSON_GetStringValue(
-              cJSON_GetObjectItemCaseSensitive(configuration_json, "type")),
-          sizeof(candidate.sensor_type));
   configuration = candidate;
   return ESP_OK;
 }

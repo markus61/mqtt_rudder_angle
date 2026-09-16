@@ -85,7 +85,7 @@ esp_err_t angle_sensor_configure(const cJSON *configuration) {
   const char *type = cJSON_GetStringValue(
       cJSON_GetObjectItemCaseSensitive(configuration, "type"));
 
-  if (!angle_sensor_can_serve_type(type)) {
+  if (type != NULL && strcmp(type, angle_sensor_config.sensor_type) != 0) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -96,7 +96,6 @@ esp_err_t angle_sensor_configure(const cJSON *configuration) {
   if (err != ESP_OK) {
     return err;
   }
-  strlcpy(candidate.sensor_type, type, sizeof(candidate.sensor_type));
   angle_sensor_config = candidate;
   return ESP_OK;
 }

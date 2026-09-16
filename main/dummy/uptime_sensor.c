@@ -17,6 +17,10 @@ static TaskHandle_t uptime_sensor_task_handle;
 
 #define UPTIME_SENSOR_PROVIDER_NAME "uptime_sensor"
 
+const char *uptime_sensor_current_type(void) {
+  return uptime_sensor_config()->sensor_type;
+}
+
 static bool publish_uptime_reading(const char *topic, float uptime_seconds) {
   char payload[128];
   time_t current_time = time(NULL);
@@ -133,8 +137,8 @@ esp_err_t uptime_sensor_control_action(const char *payload, int payload_length) 
   } else if (strcasecmp(action->valuestring, "help") == 0) {
     publish_uptime_reply_message(
         "Publishes elapsed device uptime periodically. Start it with a "
-        "configure action using type 'dummy_uptime', a safe name, an interval "
-        "in seconds, and an optional sensor_topic. It moves control and "
+        "configure action using a safe name, an optional interval in seconds, "
+        "and an optional sensor_topic. It moves control and "
         "replies from the sensor number to that name. Invalid supplied "
         "settings reject the entire action. Device braindump reports its name "
         "and working topics.");

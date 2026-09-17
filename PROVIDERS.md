@@ -98,11 +98,11 @@ successful runtime start, the new named control topic is subscribed. If its NVS
 commit fails, the running instance remains visible and a later `configure` can
 retry persistence.
 
-Provider actions use `control/<device>/<name>`. `configure` remains
-provider-scoped: it updates the addressed instance, may rename it to another
-unique safe name, and persists its snapshot. Its type may be omitted or repeated
-but cannot change. When renamed, MQTT subscribes the new topic before removing
-the old subscription.
+Provider actions use `control/<device>/<name>`. `configure` updates the
+addressed instance and persists its snapshot; the action does not need a
+`name` field. Supplying `name` is only needed to rename it to another unique,
+safe name. Its type may be omitted or repeated but cannot change. When renamed,
+MQTT subscribes the new topic before removing the old subscription.
 
 `deactivate` is provider-scoped and requires no provider-specific support. It
 destroys the live instance, releasing its resources and stopping publications,
@@ -135,7 +135,6 @@ Activating an unknown or already active name is rejected.
 ```json
 {
   "action": "configure",
-  "name": "device_uptime",
   "interval": 60,
   "sensor_topic": "sensors/uptime"
 }

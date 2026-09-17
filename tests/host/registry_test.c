@@ -127,7 +127,7 @@ MOCK_PROVIDER(uptime_sensor, 1, "model-b")
 static esp_err_t configure(const char *target, const char *name,
                            const char *type, int value) {
   cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "name", name);
+  if (name != NULL) cJSON_AddStringToObject(json, "name", name);
   if (type != NULL) cJSON_AddStringToObject(json, "type", type);
   cJSON_AddNumberToObject(json, "value", value);
   const esp_err_t err = sensor_provider_configure_from_mqtt(target, json);
@@ -207,10 +207,13 @@ int main(void) {
                  "\"model-a\",\"model-a2\"]},{\"name\":\"uptime_sensor\","
                  "\"types\":[\"model-b\"]}]}"));
 
-  /* Configure remains scoped to the addressed instance and may rename it. */
+  /* Configure is scoped to the addressed instance; its name is optional and
+   * only needed to explicitly rename it. */
   assert(configure("1", "rudder", "model-a", 7) == ESP_OK);
   assert(configure("2", "clock", NULL, 60) == ESP_OK);
   assert(instance_value("rudder") == 7 && instance_value("clock") == 60);
+  assert(configure("rudder", NULL, NULL, 20) == ESP_OK);
+  assert(instance_value("rudder") == 20);
   assert(configure("rudder", "clock", "model-a", 8) ==
          ESP_ERR_INVALID_STATE);
   assert(configure("rudder", "bad/name", "model-a", 8) ==
@@ -222,7 +225,7 @@ int main(void) {
   assert(add("port", "model-a", 11) == ESP_OK);
   assert(add("starboard", "model-a2", 22) == ESP_OK);
   assert(sensor_provider_count() == 4U);
-  assert(instance_value("rudder") == 7);
+  assert(instance_value("rudder") == 20);
   assert(instance_value("port") == 11);
   assert(instance_value("starboard") == 22);
   assert(add("port", "model-b", 1) == ESP_ERR_INVALID_STATE);
@@ -232,7 +235,7 @@ int main(void) {
 
   /* Reconfiguring one same-type instance does not affect the others. */
   assert(configure("port", "port", "model-a", 33) == ESP_OK);
-  assert(instance_value("rudder") == 7);
+  assert(instance_value("rudder") == 20);
   assert(instance_value("port") == 33);
   assert(instance_value("starboard") == 22);
   assert(sensor_provider_handle_control("port", "{}", 2) == ESP_OK);
@@ -316,7 +319,7 @@ int main(void) {
   assert(sensor_provider_count() == 4U);
   assert(validations[0] == 0 && validations[1] == 0);
   assert(starts[0] == 2 && starts[1] == 1);
-  assert(instance_value("rudder") == 7);
+  assert(instance_value("rudder") == 20);
   assert(instance_value("starboard") == 22);
   assert(registry_provider_state("port", &state));
   assert(state == SENSOR_PROVIDER_INACTIVE);

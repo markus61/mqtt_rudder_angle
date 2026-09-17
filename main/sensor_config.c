@@ -539,12 +539,17 @@ esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
   if (index == SIZE_MAX) {
     return ESP_ERR_INVALID_ARG;
   }
-  const char *name = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(action_json, "name"));
+  const cJSON *name_item =
+      cJSON_GetObjectItemCaseSensitive(action_json, "name");
   const cJSON *type_item =
       cJSON_GetObjectItemCaseSensitive(action_json, "type");
   const char *requested_type = cJSON_GetStringValue(type_item);
   feature_entry_t *current = active_lookup->configurations[index];
+  /* A provider action is already addressed to one unambiguous instance by its
+   * MQTT control topic.  A name is therefore optional: omitting it retains the
+   * current name, while supplying it explicitly requests a rename. */
+  const char *name = name_item != NULL ? cJSON_GetStringValue(name_item)
+                                       : current->name;
   if (!sensor_name_is_safe_topic_level(name) ||
       (type_item != NULL && requested_type == NULL) ||
       (requested_type != NULL && strcmp(requested_type, current->type) != 0)) {
@@ -578,7 +583,7 @@ esp_err_t sensor_provider_configure_from_mqtt(const char *provider_name,
   registry_entry_free(current);
   err = registry_write(active_lookup);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "'%s' is running but not persisted: %s", name,
+    ESP_LOGE(TAG, "'%s' is running but not persisted: %s", candidate->name,
              esp_err_to_name(err));
   }
   return err;

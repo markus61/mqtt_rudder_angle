@@ -12,6 +12,7 @@ static const char *TAG = "elobau_angle_sensor_config";
 static const char *const ANGLE_SENSOR_CONFIG_TYPES[] = {
     "elobau_424A11A040B",
     "elobau_424A11A060B",
+    "elobau_424A11A120B",
 };
 
 /**
@@ -23,7 +24,7 @@ static const angle_sensor_config_t default_angle_sensor_config = {
     .sensor_samples_per_reading = 8,
     .sensor_minimum_millivolts = 3300,
     .sensor_maximum_millivolts = 0,
-    .sensor_deadband_millivolt = 5,
+    .sensor_deadband_millivolt = 15,
     .sensor_topic = "sensors/rudders/starboard",
     .sensor_type = "elobau_424A11A040B",
     .sensor_minimum_degrees = 0.0f,
@@ -80,8 +81,7 @@ bool angle_sensor_config_init(angle_sensor_config_t *configuration,
     return false;
   }
   *configuration = default_angle_sensor_config;
-  strlcpy(configuration->sensor_type, type,
-          sizeof(configuration->sensor_type));
+  strlcpy(configuration->sensor_type, type, sizeof(configuration->sensor_type));
   return true;
 }
 
@@ -90,8 +90,8 @@ esp_err_t angle_sensor_config_apply_json(angle_sensor_config_t *configuration,
   if (configuration == NULL || !cJSON_IsObject(json)) {
     return ESP_ERR_INVALID_ARG;
   }
-  const char *type = cJSON_GetStringValue(
-      cJSON_GetObjectItemCaseSensitive(json, "type"));
+  const char *type =
+      cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "type"));
 
   if (type != NULL && strcmp(type, configuration->sensor_type) != 0) {
     return ESP_ERR_INVALID_ARG;
@@ -113,9 +113,11 @@ void angle_sensor_config_apply_calibration(angle_sensor_config_t *configuration,
                                            int calibration_max_millivolts,
                                            bool *minimum_replaced,
                                            bool *maximum_replaced) {
-  const bool replace_minimum = configuration != NULL &&
+  const bool replace_minimum =
+      configuration != NULL &&
       calibration_min_millivolts < configuration->sensor_minimum_millivolts;
-  const bool replace_maximum = configuration != NULL &&
+  const bool replace_maximum =
+      configuration != NULL &&
       calibration_max_millivolts > configuration->sensor_maximum_millivolts;
 
   if (replace_minimum) {
@@ -174,7 +176,8 @@ static esp_err_t apply_positive_integer_member(const cJSON *configuration,
 }
 
 static esp_err_t apply_integer_member(const cJSON *configuration,
-                                      const char *member_name, int *destination) {
+                                      const char *member_name,
+                                      int *destination) {
   const cJSON *member =
       cJSON_GetObjectItemCaseSensitive(configuration, member_name);
   if (member == NULL) {
@@ -189,7 +192,8 @@ static esp_err_t apply_integer_member(const cJSON *configuration,
 }
 
 static esp_err_t apply_float_member(const cJSON *configuration,
-                                    const char *member_name, float *destination) {
+                                    const char *member_name,
+                                    float *destination) {
   const cJSON *member =
       cJSON_GetObjectItemCaseSensitive(configuration, member_name);
   if (member == NULL) {
@@ -244,8 +248,7 @@ static esp_err_t apply_topic(const cJSON *configuration,
     ESP_LOGE(TAG, "\"sensor_topic\" must be a string");
     return ESP_ERR_INVALID_ARG;
   }
-  if (topic[0] == '\0' ||
-      strlen(topic) >= sizeof(destination->sensor_topic)) {
+  if (topic[0] == '\0' || strlen(topic) >= sizeof(destination->sensor_topic)) {
     ESP_LOGE(TAG,
              "\"sensor_topic\" must be non-empty and at most %d characters",
              (int)sizeof(destination->sensor_topic) - 1);
@@ -266,38 +269,49 @@ static esp_err_t apply_configuration_json(const cJSON *configuration,
     return ESP_ERR_INVALID_ARG;
   }
   esp_err_t err = apply_sensor_pin(configuration, destination);
-  if (err == ESP_OK) err = apply_positive_integer_member(
-      configuration, "sensor_sample_period_ms", &destination->sensor_sample_period_ms);
-  if (err == ESP_OK) err = apply_positive_integer_member(
-      configuration, "sensor_samples_per_reading", &destination->sensor_samples_per_reading);
-  if (err == ESP_OK) err = apply_integer_member(
-      configuration, "sensor_minimum_millivolts", &destination->sensor_minimum_millivolts);
-  if (err == ESP_OK) err = apply_integer_member(
-      configuration, "sensor_maximum_millivolts", &destination->sensor_maximum_millivolts);
-  if (err == ESP_OK) err = apply_integer_member(
-      configuration, "sensor_deadband_millivolt", &destination->sensor_deadband_millivolt);
-  if (err == ESP_OK) err = apply_float_member(
-      configuration, "sensor_minimum_degrees", &destination->sensor_minimum_degrees);
-  if (err == ESP_OK) err = apply_float_member(
-      configuration, "sensor_maximum_degrees", &destination->sensor_maximum_degrees);
-  if (err == ESP_OK) err = apply_float_member(
-      configuration, "sensor_center_degrees", &destination->sensor_center_degrees);
-  if (err == ESP_OK) err = apply_topic(configuration, destination);
+  if (err == ESP_OK)
+    err =
+        apply_positive_integer_member(configuration, "sensor_sample_period_ms",
+                                      &destination->sensor_sample_period_ms);
+  if (err == ESP_OK)
+    err = apply_positive_integer_member(
+        configuration, "sensor_samples_per_reading",
+        &destination->sensor_samples_per_reading);
+  if (err == ESP_OK)
+    err = apply_integer_member(configuration, "sensor_minimum_millivolts",
+                               &destination->sensor_minimum_millivolts);
+  if (err == ESP_OK)
+    err = apply_integer_member(configuration, "sensor_maximum_millivolts",
+                               &destination->sensor_maximum_millivolts);
+  if (err == ESP_OK)
+    err = apply_integer_member(configuration, "sensor_deadband_millivolt",
+                               &destination->sensor_deadband_millivolt);
+  if (err == ESP_OK)
+    err = apply_float_member(configuration, "sensor_minimum_degrees",
+                             &destination->sensor_minimum_degrees);
+  if (err == ESP_OK)
+    err = apply_float_member(configuration, "sensor_maximum_degrees",
+                             &destination->sensor_maximum_degrees);
+  if (err == ESP_OK)
+    err = apply_float_member(configuration, "sensor_center_degrees",
+                             &destination->sensor_center_degrees);
+  if (err == ESP_OK)
+    err = apply_topic(configuration, destination);
   if (err != ESP_OK) {
     return err;
   }
 
-  ESP_LOGI(TAG,
-           "Angle sensor configuration: pin=%d, sample period=%d ms, "
-           "samples per reading=%d, topic='%s', min mV=%d, max mV=%d, "
-           "deadband mV=%d, min deg=%.2f, max deg=%.2f, center deg=%.2f",
-           destination->sensor_gpio_number, destination->sensor_sample_period_ms,
-           destination->sensor_samples_per_reading, destination->sensor_topic,
-           destination->sensor_minimum_millivolts,
-           destination->sensor_maximum_millivolts,
-           destination->sensor_deadband_millivolt,
-           destination->sensor_minimum_degrees,
-           destination->sensor_maximum_degrees,
-           destination->sensor_center_degrees);
+  ESP_LOGI(
+      TAG,
+      "Angle sensor configuration: pin=%d, sample period=%d ms, "
+      "samples per reading=%d, topic='%s', min mV=%d, max mV=%d, "
+      "deadband mV=%d, min deg=%.2f, max deg=%.2f, center deg=%.2f",
+      destination->sensor_gpio_number, destination->sensor_sample_period_ms,
+      destination->sensor_samples_per_reading, destination->sensor_topic,
+      destination->sensor_minimum_millivolts,
+      destination->sensor_maximum_millivolts,
+      destination->sensor_deadband_millivolt,
+      destination->sensor_minimum_degrees, destination->sensor_maximum_degrees,
+      destination->sensor_center_degrees);
   return ESP_OK;
 }

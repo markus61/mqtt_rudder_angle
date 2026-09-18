@@ -110,17 +110,11 @@ static bool publish_angle_reading(const char *topic, float angle_degrees) {
   char timestamp[32];
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
 
-  json_gen_str_t generator;
-  json_gen_str_start(&generator, payload, sizeof(payload), NULL, NULL);
-  if (json_gen_start_object(&generator) != 0 ||
-      !json_obj_set_escaped_string(&generator, "now", timestamp) ||
-      json_gen_obj_set_float(&generator, "angle", angle_degrees) != 0 ||
-      json_gen_end_object(&generator) != 0) {
-    return false;
-  }
-  const int length = json_gen_str_end(&generator);
-  return length > 1 && (size_t)length <= sizeof(payload) &&
-         mqtt_publish_telemetry(topic, payload, (size_t)length - 1U);
+  const int length = snprintf(payload, sizeof(payload),
+                              "{\"now\":\"%s\",\"angle\":%.1f}", timestamp,
+                              (double)angle_degrees);
+  return length > 1 && (size_t)length < sizeof(payload) &&
+         mqtt_publish_telemetry(topic, payload, (size_t)length);
 }
 
 static void publish_angle_reply_message(const char *instance_name,

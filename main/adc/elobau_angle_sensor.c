@@ -80,14 +80,12 @@ size_t angle_sensor_config_size(void) { return sizeof(angle_sensor_config_t); }
 
 esp_err_t angle_sensor_configure(void *opaque, const cJSON *configuration) {
   angle_sensor_instance_t *instance = opaque;
-  return instance != NULL
-             ? angle_sensor_config_apply_json(&instance->configuration,
-                                              configuration)
-             : ESP_ERR_INVALID_ARG;
+  return instance != NULL ? angle_sensor_config_apply_json(
+                                &instance->configuration, configuration)
+                          : ESP_ERR_INVALID_ARG;
 }
 
-esp_err_t angle_sensor_config_restore(void *opaque,
-                                      const void *configuration) {
+esp_err_t angle_sensor_config_restore(void *opaque, const void *configuration) {
   angle_sensor_instance_t *instance = opaque;
   if (instance == NULL || configuration == NULL) {
     return ESP_ERR_INVALID_ARG;
@@ -110,9 +108,9 @@ static bool publish_angle_reading(const char *topic, float angle_degrees) {
   char timestamp[32];
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc_time);
 
-  const int length = snprintf(payload, sizeof(payload),
-                              "{\"now\":\"%s\",\"angle\":%.1f}", timestamp,
-                              (double)angle_degrees);
+  const int length =
+      snprintf(payload, sizeof(payload), "{\"now\":\"%s\",\"angle\":%.1f}",
+               timestamp, (double)angle_degrees);
   return length > 1 && (size_t)length < sizeof(payload) &&
          mqtt_publish_telemetry(topic, payload, (size_t)length);
 }
@@ -130,8 +128,7 @@ static void publish_angle_reply_message(const char *instance_name,
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(instance_name, payload,
-                                   (size_t)length - 1U)) {
+      !mqtt_publish_sensor_reply(instance_name, payload, (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish help response");
   }
 }
@@ -152,8 +149,7 @@ static void publish_angle_braindump(const angle_sensor_instance_t *instance,
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(instance_name, payload,
-                                   (size_t)length - 1U)) {
+      !mqtt_publish_sensor_reply(instance_name, payload, (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish provider configuration");
   }
 }
@@ -172,8 +168,7 @@ static void publish_angle_calibration(const char *instance_name,
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(instance_name, payload,
-                                     (size_t)length - 1U)) {
+      !mqtt_publish_sensor_reply(instance_name, payload, (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish calibration response");
   }
 }
@@ -198,8 +193,7 @@ static void publish_angle_calibration_check(const char *instance_name,
   }
   const int length = json_gen_str_end(&generator);
   if (length <= 1 || (size_t)length > sizeof(payload) ||
-      !mqtt_publish_sensor_reply(instance_name, payload,
-                                   (size_t)length - 1U)) {
+      !mqtt_publish_sensor_reply(instance_name, payload, (size_t)length - 1U)) {
     ESP_LOGW(TAG, "Could not publish calibration-check response");
   }
 }
@@ -219,8 +213,8 @@ esp_err_t angle_sensor_control_action(void *opaque, const char *instance_name,
     ESP_LOGW(TAG, "Control payload must contain a string action");
     result = ESP_ERR_INVALID_ARG;
   } else if (strcasecmp(action->valuestring, "configure") == 0) {
-    const esp_err_t err = sensor_provider_configure_from_mqtt(
-        instance_name, action_json);
+    const esp_err_t err =
+        sensor_provider_configure_from_mqtt(instance_name, action_json);
     if (err != ESP_OK) {
       ESP_LOGW(TAG, "Could not configure sensor: %s", esp_err_to_name(err));
     }
@@ -242,16 +236,18 @@ esp_err_t angle_sensor_control_action(void *opaque, const char *instance_name,
     }
   } else if (strcasecmp(action->valuestring, "calibration_check") == 0) {
     const angle_sensor_config_t *config = &instance->configuration;
-    const bool calibration_required =
-        instance->calibration_min_millivolts < config->sensor_minimum_millivolts ||
-        instance->calibration_max_millivolts > config->sensor_maximum_millivolts;
+    const bool calibration_required = instance->calibration_min_millivolts <
+                                          config->sensor_minimum_millivolts ||
+                                      instance->calibration_max_millivolts >
+                                          config->sensor_maximum_millivolts;
     publish_angle_calibration_check(instance_name, calibration_required,
                                     instance->calibration_min_millivolts,
                                     instance->calibration_max_millivolts);
   } else if (strcasecmp(action->valuestring, "braindump") == 0) {
     publish_angle_braindump(instance, instance_name);
   } else if (strcasecmp(action->valuestring, "help") == 0) {
-    publish_angle_reply_message(instance_name,
+    publish_angle_reply_message(
+        instance_name,
         "Reads an Elobau angle sensor through the ADC and publishes its "
         "angle in degrees. Configure it with a safe name; this moves control "
         "and replies from its number to that "
@@ -280,7 +276,7 @@ esp_err_t angle_sensor_control_action(void *opaque, const char *instance_name,
       const int length = json_gen_str_end(&generator);
       if (length <= 1 || (size_t)length > sizeof(reply) ||
           !mqtt_publish_sensor_reply(instance_name, reply,
-                                       (size_t)length - 1U)) {
+                                     (size_t)length - 1U)) {
         ESP_LOGW(TAG, "Could not publish unknown-action response");
       }
     }
@@ -302,9 +298,8 @@ static bool read_sensor_millivolts(angle_sensor_instance_t *instance,
   for (int sample_index = 0; sample_index < samples_per_reading;
        sample_index++) {
     int raw_reading = 0;
-    esp_err_t err =
-        adc_oneshot_read(shared_adc_unit_handle, instance->sensor_adc_channel,
-                         &raw_reading);
+    esp_err_t err = adc_oneshot_read(
+        shared_adc_unit_handle, instance->sensor_adc_channel, &raw_reading);
     if (err != ESP_OK) {
       ESP_LOGW(TAG, "ADC read failed: %s", esp_err_to_name(err));
       return false;
@@ -337,12 +332,14 @@ static void angle_sensor_task(void *task_argument) {
   float degrees = 0.0;
 
   while (true) {
-    /* Re-read the configuration every iteration so a topic that arrives
+    /* Re-read the configuration every iteration so a control topic that arrives
      * later takes effect without a restart. */
     const angle_sensor_config_t *config = &instance->configuration;
     const int samples_per_reading = config->sensor_samples_per_reading < 3
                                         ? 3
                                         : config->sensor_samples_per_reading;
+    /* Calculate the millivolts per degree based on the configured sensor range.
+     */
     const float mv_per_degree =
         (float)(config->sensor_maximum_millivolts -
                 config->sensor_minimum_millivolts) /
@@ -442,9 +439,9 @@ esp_err_t angle_sensor_start(void *opaque) {
   /* The pin was validated as an ADC1 pin when the configuration was applied,
    * so this only needs the channel it maps onto. */
   adc_unit_t resolved_adc_unit = ADC_UNIT_1;
-  esp_err_t err = adc_oneshot_io_to_channel(
-      config->sensor_gpio_number, &resolved_adc_unit,
-      &instance->sensor_adc_channel);
+  esp_err_t err =
+      adc_oneshot_io_to_channel(config->sensor_gpio_number, &resolved_adc_unit,
+                                &instance->sensor_adc_channel);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "GPIO %d is not an ADC pin: %s", config->sensor_gpio_number,
              esp_err_to_name(err));
@@ -469,9 +466,8 @@ esp_err_t angle_sensor_start(void *opaque) {
       .atten = ADC_ATTEN_DB_12,
       .bitwidth = ADC_BITWIDTH_DEFAULT,
   };
-  err = adc_oneshot_config_channel(shared_adc_unit_handle,
-                                   instance->sensor_adc_channel,
-                                   &channel_config);
+  err = adc_oneshot_config_channel(
+      shared_adc_unit_handle, instance->sensor_adc_channel, &channel_config);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(err));
     goto release_adc_unit;
@@ -511,34 +507,35 @@ release_adc_unit:
   return err;
 }
 
-esp_err_t angle_sensor_config_to_json(const void *opaque, json_gen_str_t *json) {
+esp_err_t angle_sensor_config_to_json(const void *opaque,
+                                      json_gen_str_t *json) {
   const angle_sensor_instance_t *instance = opaque;
   const angle_sensor_config_t *config =
       instance != NULL ? &instance->configuration : NULL;
   if (json == NULL || config == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
-  return
-         json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) ==
-             0 &&
-         json_gen_obj_set_int(json, "sensor_samples_per_reading",
-                              config->sensor_samples_per_reading) == 0 &&
-         json_gen_obj_set_int(json, "sensor_sample_period_ms",
-                              config->sensor_sample_period_ms) == 0 &&
-         json_gen_obj_set_int(json, "sensor_minimum_millivolts",
-                              config->sensor_minimum_millivolts) == 0 &&
-         json_gen_obj_set_int(json, "sensor_maximum_millivolts",
-                              config->sensor_maximum_millivolts) == 0 &&
-         json_gen_obj_set_int(json, "sensor_deadband_millivolt",
-                              config->sensor_deadband_millivolt) == 0 &&
-         json_gen_obj_set_float(json, "sensor_minimum_degrees",
-                                config->sensor_minimum_degrees) == 0 &&
-         json_gen_obj_set_float(json, "sensor_maximum_degrees",
-                                config->sensor_maximum_degrees) == 0 &&
-         json_gen_obj_set_float(json, "sensor_center_degrees",
-                                config->sensor_center_degrees) == 0 &&
-         json_obj_set_escaped_string(json, "sensor_topic",
-                                     config->sensor_topic)
+  return json_gen_obj_set_int(json, "sensor_pin", config->sensor_gpio_number) ==
+                     0 &&
+                 json_gen_obj_set_int(json, "sensor_samples_per_reading",
+                                      config->sensor_samples_per_reading) ==
+                     0 &&
+                 json_gen_obj_set_int(json, "sensor_sample_period_ms",
+                                      config->sensor_sample_period_ms) == 0 &&
+                 json_gen_obj_set_int(json, "sensor_minimum_millivolts",
+                                      config->sensor_minimum_millivolts) == 0 &&
+                 json_gen_obj_set_int(json, "sensor_maximum_millivolts",
+                                      config->sensor_maximum_millivolts) == 0 &&
+                 json_gen_obj_set_int(json, "sensor_deadband_millivolt",
+                                      config->sensor_deadband_millivolt) == 0 &&
+                 json_gen_obj_set_float(json, "sensor_minimum_degrees",
+                                        config->sensor_minimum_degrees) == 0 &&
+                 json_gen_obj_set_float(json, "sensor_maximum_degrees",
+                                        config->sensor_maximum_degrees) == 0 &&
+                 json_gen_obj_set_float(json, "sensor_center_degrees",
+                                        config->sensor_center_degrees) == 0 &&
+                 json_obj_set_escaped_string(json, "sensor_topic",
+                                             config->sensor_topic)
              ? ESP_OK
              : ESP_FAIL;
 }
@@ -552,5 +549,5 @@ esp_err_t angle_sensor_working_topics_json_add(const void *opaque,
     return ESP_ERR_INVALID_ARG;
   }
   return json_gen_arr_set_string(json, config->sensor_topic) == 0 ? ESP_OK
-                                                                    : ESP_FAIL;
+                                                                  : ESP_FAIL;
 }
